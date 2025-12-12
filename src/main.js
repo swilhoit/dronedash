@@ -2374,32 +2374,9 @@ function createRestaurantMarkers() {
 
 function createRestaurantMarkerWithPhoto(restaurant) {
     const fallbackUrl = getCuisineFallbackImage(restaurant);
-
-    // Try Google Places photo first if available, using CORS proxy
-    if (restaurant.photoUrl) {
-        const googleImg = new Image();
-        googleImg.crossOrigin = 'anonymous';
-
-        // Use CORS proxy to fetch Google Places images
-        const proxiedUrl = `${CORS_PROXY_URL}?url=${encodeURIComponent(restaurant.photoUrl)}`;
-
-        googleImg.onload = () => {
-            // Image loaded via CORS proxy - use it
-            const canvas = createMarkerCanvasWithImage(restaurant, googleImg);
-            addRestaurantEntity(restaurant, canvas);
-        };
-
-        googleImg.onerror = () => {
-            // Proxy failed - fall back to cuisine-based images
-            console.warn('CORS proxy failed for:', restaurant.name, '- using fallback');
-            loadFallbackImage(restaurant, fallbackUrl);
-        };
-
-        googleImg.src = proxiedUrl;
-    } else {
-        // No Google photo available - use fallback directly
-        loadFallbackImage(restaurant, fallbackUrl);
-    }
+    // Google Places photos are blocked by CORS - use cuisine-based fallback images directly
+    // (Google images still work for <img> elements like delivery panel, just not canvas)
+    loadFallbackImage(restaurant, fallbackUrl);
 }
 
 function loadFallbackImage(restaurant, fallbackUrl) {
