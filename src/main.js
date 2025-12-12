@@ -2548,10 +2548,45 @@ function createRestaurantMarkers() {
 }
 
 function createRestaurantMarkerWithPhoto(restaurant) {
-    // Load image through CORS proxy, draw to canvas, pass to Cesium
-    const imageUrl = getCuisineFallbackImage(restaurant);
-    const proxiedUrl = `${CORS_PROXY_URL}?url=${encodeURIComponent(imageUrl)}`;
+    // Try Google Places photo first, fall back to Unsplash
+    const googlePhotoUrl = restaurant.photoUrl;
+    const fallbackUrl = getCuisineFallbackImage(restaurant);
 
+    if (googlePhotoUrl) {
+        // Try Google photo through proxy first
+        const proxiedGoogleUrl = `${CORS_PROXY_URL}?url=${encodeURIComponent(googlePhotoUrl)}`;
+        const googleImg = new Image();
+        googleImg.crossOrigin = 'anonymous';
+
+        googleImg.onload = () => {
+            // Require minimum 50x50 (proxy returns 1x1 on error)
+            if (googleImg.width >= 50 && googleImg.height >= 50) {
+                try {
+                    const canvas = createMarkerCanvasWithImage(restaurant, googleImg);
+                    addRestaurantEntity(restaurant, canvas);
+                } catch (e) {
+                    // Google failed, try Unsplash
+                    loadUnsplashFallback(restaurant, fallbackUrl);
+                }
+            } else {
+                loadUnsplashFallback(restaurant, fallbackUrl);
+            }
+        };
+
+        googleImg.onerror = () => {
+            // Google failed, try Unsplash
+            loadUnsplashFallback(restaurant, fallbackUrl);
+        };
+
+        googleImg.src = proxiedGoogleUrl;
+    } else {
+        // No Google photo, use Unsplash directly
+        loadUnsplashFallback(restaurant, fallbackUrl);
+    }
+}
+
+function loadUnsplashFallback(restaurant, fallbackUrl) {
+    const proxiedUrl = `${CORS_PROXY_URL}?url=${encodeURIComponent(fallbackUrl)}`;
     const img = new Image();
     img.crossOrigin = 'anonymous';
 
