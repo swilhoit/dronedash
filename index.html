@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Drone Simulator - CesiumJS</title>
+    <title>Drone Dash</title>
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,7 +15,7 @@
     <!-- Spawn Point Modal -->
     <div id="spawn-modal" class="modal">
         <div class="modal-content">
-            <h2>Drone Simulator</h2>
+            <img src="/logo.png" alt="Drone Dash" class="modal-logo">
             <p>Search for a location or enter coordinates</p>
             <div class="input-group">
                 <label for="location-search">Search Location</label>
@@ -59,7 +61,7 @@
     <!-- Game Stats Panel -->
     <div id="game-stats" class="game-stats hidden">
         <div class="stats-header">
-            <span class="game-logo">DRONE DASH</span>
+            <img src="/logo.png" alt="Drone Dash" class="game-logo-img">
             <button id="pause-btn" class="pause-btn">||</button>
         </div>
         <div class="stats-row">
@@ -154,15 +156,16 @@
 
     <!-- Start Game Button -->
     <div id="start-game-container" class="start-game-container hidden">
+        <img src="/logo.png" alt="Drone Dash" class="start-logo">
         <button id="start-game-btn" class="start-game-btn">
-            Start Drone Dash
+            START GAME
         </button>
         <p class="start-hint">Deliver food orders from restaurants to earn money!</p>
     </div>
 
     <!-- Mini-map container -->
     <div id="minimap-container">
-        <div class="minimap-label" id="minimap-label">TOP VIEW</div>
+        <div class="minimap-label" id="minimap-label">MAP</div>
         <canvas id="minimap-canvas"></canvas>
         <div class="minimap-nav-info hidden" id="minimap-nav">
             <span id="nav-distance">0m</span>
@@ -170,10 +173,16 @@
         </div>
     </div>
 
+    <!-- Street Names Toggle -->
+    <button id="street-names-toggle" class="map-toggle-btn hidden" title="Toggle Street Names">
+        <span class="toggle-icon">🏷️</span>
+        <span class="toggle-label">Streets</span>
+    </button>
+
     <!-- Loading Modal -->
     <div id="loading-modal" class="modal hidden">
         <div class="loading-content">
-            <h2>Loading World</h2>
+            <img src="/logo.png" alt="Drone Dash" class="loading-logo">
             <div class="loading-status" id="loading-status">Initializing...</div>
             <div class="progress-container">
                 <div class="progress-bar" id="progress-bar"></div>
@@ -182,6 +191,37 @@
         </div>
     </div>
 
+    <!-- Restaurant Detail Modal -->
+    <div id="restaurant-modal" class="restaurant-modal hidden">
+        <div class="restaurant-modal-content">
+            <button id="restaurant-modal-close" class="modal-close-btn">&times;</button>
+            <div class="restaurant-photos" id="restaurant-photos">
+                <!-- Photos carousel -->
+            </div>
+            <div class="restaurant-details">
+                <h2 id="restaurant-modal-name">Restaurant Name</h2>
+                <div class="restaurant-meta">
+                    <span class="restaurant-rating" id="restaurant-modal-rating">
+                        <span class="stars"></span>
+                        <span class="rating-count"></span>
+                    </span>
+                    <span class="restaurant-price" id="restaurant-modal-price"></span>
+                </div>
+                <div class="restaurant-types" id="restaurant-modal-types"></div>
+                <div class="restaurant-status" id="restaurant-modal-status"></div>
+                <div class="restaurant-address" id="restaurant-modal-address"></div>
+                <div class="restaurant-phone" id="restaurant-modal-phone"></div>
+                <div class="restaurant-hours" id="restaurant-modal-hours"></div>
+                <div class="restaurant-reviews" id="restaurant-modal-reviews">
+                    <!-- Reviews will be populated here -->
+                </div>
+            </div>
+            <button id="restaurant-order-btn" class="restaurant-order-btn">Order from Here</button>
+        </div>
+    </div>
+
+    <!-- Google Maps Places API -->
+    <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAHdMOFQoW-UKhIS0vEmkqi7-TNNhpuvtI&libraries=places&loading=async"></script>
     <script type="module" src="/src/main.js"></script>
 </body>
 </html>
