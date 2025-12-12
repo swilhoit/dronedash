@@ -579,19 +579,19 @@ function updateDrone(deltaTime) {
     const isTurbo = turboEnabled || keys.ShiftLeft || keys.ShiftRight;
 
     // Base values
-    const baseAcceleration = 120;   // m/s^2
+    const baseAcceleration = 150;   // m/s^2 (snappier response)
     const baseTurnSpeed = 120;      // degrees/s
-    const baseVerticalSpeed = 40;   // m/s
+    const baseVerticalSpeed = 50;   // m/s
     const baseMaxSpeed = 150;       // m/s
 
-    // Turbo multiplier (2.5x speed!)
-    const turboMultiplier = isTurbo ? 2.5 : 1.0;
+    // Turbo multiplier (4x speed for intense boost!)
+    const turboMultiplier = isTurbo ? 4.0 : 1.0;
 
     const acceleration = baseAcceleration * turboMultiplier;
-    const turnSpeed = baseTurnSpeed * (isTurbo ? 1.5 : 1.0);  // Slightly faster turning
+    const turnSpeed = baseTurnSpeed * (isTurbo ? 2.0 : 1.0);  // Faster turning in turbo
     const verticalSpeed = baseVerticalSpeed * turboMultiplier;
     const maxSpeed = baseMaxSpeed * turboMultiplier;
-    const drag = isTurbo ? 0.98 : 0.97;  // Less drag in turbo
+    const drag = isTurbo ? 0.94 : 0.91;  // Much more friction for quicker stops
 
     // Update turbo indicator
     updateTurboIndicator(isTurbo);
