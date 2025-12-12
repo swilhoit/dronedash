@@ -331,108 +331,6 @@ async function initCesium() {
     updateProgress('3D Tiles loaded!', 40);
 }
 
-// Aggressive preload tiles in a large radius around spawn point
-// Returns a promise that resolves when preloading is complete
-async function preloadTilesAroundSpawn(progressCallback) {
-    if (!viewer) return;
-
-    // Much larger area for high-altitude flying
-    const preloadRadii = [250, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000, 8000];
-    const preloadAngles = 24;   // More directions
-    const preloadAltitudes = [30, 50, 100, 200, 300, 500, 800]; // Include high altitudes
-
-    console.log('Preloading tiles around spawn area (this may take a minute)...');
-
-    const metersPerDegLat = 111320;
-    const metersPerDegLng = 111320 * Math.cos(Cesium.Math.toRadians(spawnLat));
-
-    // Create viewpoints around spawn to trigger tile loading
-    const viewpoints = [];
-
-    // Add center point at various altitudes first (most important)
-    for (let alt of preloadAltitudes) {
-        viewpoints.push({ lat: spawnLat, lng: spawnLng, alt, priority: 0 });
-    }
-
-    // Add rings of viewpoints - closer rings first
-    for (let ri = 0; ri < preloadRadii.length; ri++) {
-        const radius = preloadRadii[ri];
-        for (let alt of preloadAltitudes) {
-            for (let i = 0; i < preloadAngles; i++) {
-                const angle = (i / preloadAngles) * Math.PI * 2;
-                const lat = spawnLat + (Math.cos(angle) * radius) / metersPerDegLat;
-                const lng = spawnLng + (Math.sin(angle) * radius) / metersPerDegLng;
-                viewpoints.push({ lat, lng, alt, priority: ri });
-            }
-        }
-    }
-
-    // Sort by priority (closer viewpoints first)
-    viewpoints.sort((a, b) => a.priority - b.priority);
-
-    console.log(`Preloading ${viewpoints.length} viewpoints...`);
-
-    // Save original camera position
-    const originalPosition = viewer.camera.position.clone();
-    const originalHeading = viewer.camera.heading;
-    const originalPitch = viewer.camera.pitch;
-
-    return new Promise((resolve) => {
-        let viewIndex = 0;
-        const totalViews = viewpoints.length;
-
-        const preloadInterval = setInterval(() => {
-            // Process multiple viewpoints per frame for speed
-            const batchSize = 5;
-            for (let b = 0; b < batchSize && viewIndex < totalViews; b++) {
-                const vp = viewpoints[viewIndex];
-
-                // Move camera to trigger tile loading at this viewpoint
-                viewer.camera.setView({
-                    destination: Cesium.Cartesian3.fromDegrees(vp.lng, vp.lat, vp.alt + 50),
-                    orientation: {
-                        heading: 0,
-                        pitch: Cesium.Math.toRadians(-45),
-                        roll: 0
-                    }
-                });
-
-                // Force a render to process tile requests
-                viewer.scene.render();
-
-                viewIndex++;
-            }
-
-            // Update progress
-            const progress = Math.round((viewIndex / totalViews) * 100);
-            if (progressCallback) {
-                progressCallback(progress, viewIndex, totalViews);
-            }
-
-            if (viewIndex >= totalViews) {
-                clearInterval(preloadInterval);
-
-                // Restore camera to spawn position
-                viewer.camera.setView({
-                    destination: Cesium.Cartesian3.fromDegrees(spawnLng, spawnLat, 500),
-                    orientation: {
-                        heading: originalHeading,
-                        pitch: Cesium.Math.toRadians(-30),
-                        roll: 0
-                    }
-                });
-
-                console.log('Tile preloading complete - waiting for tiles to finish loading...');
-
-                // Wait a bit for pending tile requests to complete
-                setTimeout(() => {
-                    resolve();
-                }, 2000);
-            }
-        }, 16); // ~60fps
-    });
-}
-
 // Force load tiles in current view - call this after camera moves
 function forceLoadCurrentView() {
     if (!viewer || !window.googleTileset) return;
@@ -3283,35 +3181,25 @@ async function startSimulation() {
         // Initialize Cesium
         await initCesium();
 
-        // Preload 3D map tiles in a large area (this takes a while but makes flying smoother)
-        updateProgress('Preloading 3D map (0%)...', 42);
-        await preloadTilesAroundSpawn((progress, current, total) => {
-            const overallProgress = 42 + Math.round(progress * 0.28); // 42-70%
-            updateProgress(`Preloading 3D map (${progress}%)...`, overallProgress);
-        });
-
-        // Wait for tile requests to settle
-        updateProgress('Finalizing map tiles...', 70);
-        await new Promise(r => setTimeout(r, 1500));
-
         // Load restaurants from Google Places
+        updateProgress('Loading restaurants...', 50);
         await loadRestaurants();
 
         // Create entities
-        updateProgress('Creating drone...', 78);
+        updateProgress('Creating drone...', 65);
         createDrone();
         createRestaurantMarkers();
 
         // Pre-load minimap tiles
-        updateProgress('Loading minimap...', 82);
+        updateProgress('Loading minimap...', 75);
         await preloadMinimapTiles();
 
         // Pre-fetch place details for nearby restaurants
-        updateProgress('Loading restaurant details...', 88);
+        updateProgress('Loading details...', 85);
         await prefetchPlaceDetails();
 
         // Setup controls
-        updateProgress('Initializing controls...', 95);
+        updateProgress('Starting...', 95);
         setupControls();
         initMinimap();
         setupGameControls();
@@ -3320,7 +3208,7 @@ async function startSimulation() {
         setupTurboButton();
 
         updateProgress('Ready!', 100);
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 300));
 
         // Hide loading, show HUD
         document.getElementById('loading-modal').classList.add('hidden');
@@ -3331,10 +3219,50 @@ async function startSimulation() {
         // Start animation loop
         animate();
 
+        // Background preload (non-blocking) - builds cache while playing
+        setTimeout(() => {
+            lightBackgroundPreload();
+        }, 3000);
+
     } catch (error) {
         console.error('Failed to start simulation:', error);
         updateProgress(`Error: ${error.message}`, 0);
     }
+}
+
+// Light background preload - doesn't block, runs while playing
+function lightBackgroundPreload() {
+    if (!viewer || !window.googleTileset) return;
+
+    const preloadRadii = [200, 400, 800];
+    const preloadAngles = 8;
+    const metersPerDegLat = 111320;
+    const metersPerDegLng = 111320 * Math.cos(Cesium.Math.toRadians(spawnLat));
+
+    let index = 0;
+    const positions = [];
+
+    for (const radius of preloadRadii) {
+        for (let i = 0; i < preloadAngles; i++) {
+            const angle = (i / preloadAngles) * Math.PI * 2;
+            positions.push({
+                lat: spawnLat + (Math.cos(angle) * radius) / metersPerDegLat,
+                lng: spawnLng + (Math.sin(angle) * radius) / metersPerDegLng
+            });
+        }
+    }
+
+    // Slowly trigger tile loads in background
+    const interval = setInterval(() => {
+        if (index >= positions.length) {
+            clearInterval(interval);
+            return;
+        }
+        const pos = positions[index++];
+        Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [
+            Cesium.Cartographic.fromDegrees(pos.lng, pos.lat)
+        ]).catch(() => {});
+    }, 500);
 }
 
 // ============================================
