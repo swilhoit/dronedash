@@ -2556,27 +2556,21 @@ function createRestaurantMarkerWithPhoto(restaurant) {
     img.crossOrigin = 'anonymous';
 
     img.onload = () => {
-        console.log('Image loaded:', restaurant.name, img.width, 'x', img.height);
-        // Validate image dimensions
         if (img.width > 0 && img.height > 0) {
             try {
                 const canvas = createMarkerCanvasWithImage(restaurant, img);
                 addRestaurantEntity(restaurant, canvas);
-                console.log('Marker created with image for:', restaurant.name);
             } catch (e) {
-                console.warn('Canvas error for:', restaurant.name, e);
                 const canvas = createMarkerCanvasFallback(restaurant);
                 addRestaurantEntity(restaurant, canvas);
             }
         } else {
-            console.warn('Invalid image dimensions for:', restaurant.name);
             const canvas = createMarkerCanvasFallback(restaurant);
             addRestaurantEntity(restaurant, canvas);
         }
     };
 
-    img.onerror = (e) => {
-        console.warn('Image failed for:', restaurant.name, 'URL:', proxiedUrl.substring(0, 100));
+    img.onerror = () => {
         const canvas = createMarkerCanvasFallback(restaurant);
         addRestaurantEntity(restaurant, canvas);
     };
@@ -2645,21 +2639,15 @@ function addRestaurantEntityWithUrl(restaurant, imageUrl) {
 // Create a marker canvas with an actual image
 function createMarkerCanvasWithImage(restaurant, img) {
     const canvas = document.createElement('canvas');
-    canvas.width = 256;  // Power of 2 for WebGL
+    canvas.width = 256;
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
 
     if (!ctx) {
-        console.error('Failed to get canvas context for:', restaurant.name);
         return createMarkerCanvasFallback(restaurant);
     }
 
     ctx.imageSmoothingEnabled = true;
-
-    // Fill with a test color first to verify canvas works
-    ctx.fillStyle = '#ff0000';
-    ctx.fillRect(0, 0, 256, 256);
-
     const centerX = 128;
 
     // Shadow
