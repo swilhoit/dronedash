@@ -7,9 +7,14 @@ import 'cesium/Build/Cesium/Widgets/widgets.css';
 // ============================================
 const CESIUM_ION_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIyYzg1YmU2My03MzVlLTQzNmItOGVjOS1lYzkwZjkzZjNkMmUiLCJpZCI6Mjg2NTQ5LCJpYXQiOjE3NDI1OTczMTR9.ABaRbmxTbv1A89WB1fwVxEi8oPzsfQmdlAz1E3gbOQA';
 const GOOGLE_API_KEY = 'AIzaSyAHdMOFQoW-UKhIS0vEmkqi7-TNNhpuvtI';
-const CORS_PROXY_URL = 'http://178.156.198.233:8080/proxy';
+// Use HTTPS proxy (hcloud with Caddy SSL) - works for both dev and production
+const CORS_PROXY_URL = 'https://proxy.178-156-198-233.nip.io/proxy';
 
 Cesium.Ion.defaultAccessToken = CESIUM_ION_TOKEN;
+
+// Increase concurrent tile requests for faster loading
+Cesium.RequestScheduler.maximumRequests = 50;           // Default is 6
+Cesium.RequestScheduler.maximumRequestsPerServer = 18;  // Default is 6
 
 // ============================================
 // Global Variables
@@ -238,14 +243,18 @@ async function initCesium() {
     scene.fog.screenSpaceErrorFactor = 2.0;
 
     // Increase tile cache for smoother experience
-    scene.globe.tileCacheSize = 1000;
+    scene.globe.tileCacheSize = 2000;  // Increased from 1000
 
     // Preload tiles in view frustum more aggressively
     scene.globe.preloadAncestors = true;
     scene.globe.preloadSiblings = true;
 
     // Optimize terrain loading
-    scene.globe.maximumScreenSpaceError = 2;  // Higher = faster loading, lower quality
+    scene.globe.maximumScreenSpaceError = 1.5;  // Lower = higher quality terrain
+
+    // Request render mode for better performance control
+    viewer.scene.requestRenderMode = false;  // Keep rendering continuously
+    viewer.scene.maximumRenderTimeChange = Infinity;  // No render throttling
 
     updateProgress('Loading Google 3D Tiles...', 30);
 
@@ -254,29 +263,47 @@ async function initCesium() {
         const tileset = await Cesium.createGooglePhotorealistic3DTileset();
 
         // Tileset performance optimizations
-        tileset.maximumScreenSpaceError = 8;  // Lower = higher quality, 8-16 is good balance
-        tileset.maximumMemoryUsage = 512;     // MB - increase for better caching
-        tileset.cullRequestsWhileMoving = true;
-        tileset.cullRequestsWhileMovingMultiplier = 60;  // Cull distant requests while moving fast
+        tileset.maximumScreenSpaceError = 2;  // Lower = higher quality (will increase when moving)
+        tileset.maximumMemoryUsage = 4096;    // MB - 4GB for aggressive caching
+        tileset.cullRequestsWhileMoving = false; // Don't cull - keep loading while moving
+        tileset.cullRequestsWhileMovingMultiplier = 120;
         tileset.preloadWhenHidden = true;     // Continue loading when tab not focused
         tileset.preferLeaves = true;          // Prefer loading leaf tiles for detail
-        tileset.progressiveResolutionHeightFraction = 0.5;  // Show low-res tiles faster
+        tileset.progressiveResolutionHeightFraction = 0.3;  // Show low-res tiles faster
         tileset.foveatedScreenSpaceError = true;  // Higher detail in center of screen
-        tileset.foveatedConeSize = 0.1;       // Size of high-detail center area
+        tileset.foveatedConeSize = 0.2;       // Larger high-detail center area
         tileset.foveatedMinimumScreenSpaceErrorRelaxation = 0.0;
+        tileset.dynamicScreenSpaceError = true;  // Adjust quality based on movement
+        tileset.dynamicScreenSpaceErrorDensity = 0.00278;
+        tileset.dynamicScreenSpaceErrorFactor = 4.0;
 
-        // Cache and skip LOD settings
+        // Cache and skip LOD settings - more aggressive loading
         tileset.skipLevelOfDetail = true;
-        tileset.skipScreenSpaceErrorFactor = 16;
+        tileset.skipScreenSpaceErrorFactor = 8;  // Was 16, lower = load more detail
         tileset.skipLevels = 1;
-        tileset.immediatelyLoadDesiredLevelOfDetail = false;
+        tileset.immediatelyLoadDesiredLevelOfDetail = true;  // Load high detail immediately
         tileset.loadSiblings = true;
+
+        // Additional caching settings
+        if (tileset.cacheBytes !== undefined) {
+            tileset.cacheBytes = 4294967296; // 4GB cache
+        }
 
         viewer.scene.primitives.add(tileset);
         console.log('Google Photorealistic 3D Tiles loaded successfully');
 
         // Store reference for preloading
         window.googleTileset = tileset;
+
+        // Tile loading event listeners for monitoring
+        tileset.allTilesLoaded.addEventListener(() => {
+            console.log('All visible tiles loaded!');
+            window.tilesFullyLoaded = true;
+        });
+
+        tileset.loadProgress.addEventListener((numberOfPendingRequests, numberOfTilesProcessing) => {
+            window.tilesFullyLoaded = (numberOfPendingRequests === 0 && numberOfTilesProcessing === 0);
+        });
     } catch (error) {
         console.warn('Could not load Google 3D Tiles, using default imagery:', error);
     }
@@ -302,9 +329,9 @@ async function initCesium() {
 function preloadTilesAroundSpawn() {
     if (!viewer) return;
 
-    const preloadRadius = 2000; // meters
-    const preloadAngles = 8;    // directions to preload
-    const preloadAltitudes = [50, 100, 200]; // drone flight altitudes
+    const preloadRadii = [500, 1000, 2000, 3000, 4000]; // Multiple rings
+    const preloadAngles = 16;   // More directions to preload
+    const preloadAltitudes = [30, 50, 100, 200, 400]; // More drone flight altitudes
 
     console.log('Preloading tiles around spawn area...');
 
@@ -314,19 +341,28 @@ function preloadTilesAroundSpawn() {
     // Create viewpoints around spawn to trigger tile loading
     const viewpoints = [];
 
+    // Add center point at various altitudes
     for (let alt of preloadAltitudes) {
-        for (let i = 0; i < preloadAngles; i++) {
-            const angle = (i / preloadAngles) * Math.PI * 2;
-            const dist = preloadRadius;
+        viewpoints.push({ lat: spawnLat, lng: spawnLng, alt });
+    }
 
-            const lat = spawnLat + (Math.cos(angle) * dist) / metersPerDegLat;
-            const lng = spawnLng + (Math.sin(angle) * dist) / metersPerDegLng;
+    // Add rings of viewpoints
+    for (let radius of preloadRadii) {
+        for (let alt of preloadAltitudes) {
+            for (let i = 0; i < preloadAngles; i++) {
+                const angle = (i / preloadAngles) * Math.PI * 2;
 
-            viewpoints.push({ lat, lng, alt });
+                const lat = spawnLat + (Math.cos(angle) * radius) / metersPerDegLat;
+                const lng = spawnLng + (Math.sin(angle) * radius) / metersPerDegLng;
+
+                viewpoints.push({ lat, lng, alt });
+            }
         }
     }
 
-    // Trigger tile loading by briefly looking at each viewpoint
+    console.log(`Preloading ${viewpoints.length} viewpoints...`);
+
+    // Trigger tile loading by sampling terrain and moving camera frustum
     let viewIndex = 0;
     const preloadInterval = setInterval(() => {
         if (viewIndex >= viewpoints.length) {
@@ -336,13 +372,98 @@ function preloadTilesAroundSpawn() {
         }
 
         const vp = viewpoints[viewIndex];
+
         // Sample terrain heights to trigger loading
         Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [
             Cesium.Cartographic.fromDegrees(vp.lng, vp.lat)
         ]).catch(() => {});
 
+        // Also request tiles by updating the tileset's view
+        if (window.googleTileset) {
+            const position = Cesium.Cartesian3.fromDegrees(vp.lng, vp.lat, vp.alt);
+            const boundingSphere = new Cesium.BoundingSphere(position, 100);
+            window.googleTileset.requestContent && window.googleTileset.root &&
+                viewer.scene.preloadView && viewer.scene.preloadView(boundingSphere);
+        }
+
         viewIndex++;
-    }, 50);
+    }, 30); // Faster interval
+}
+
+// Force load tiles in current view - call this after camera moves
+function forceLoadCurrentView() {
+    if (!viewer || !window.googleTileset) return;
+
+    // Trigger an immediate render to process tile requests
+    viewer.scene.requestRender();
+
+    // Force tileset to update
+    if (window.googleTileset.update) {
+        window.googleTileset.update(viewer.scene.frameState);
+    }
+}
+
+// Adaptive quality - lower quality while moving, higher when stopped
+let tileQualityTimeout = null;
+function updateTilesetQuality(isMoving) {
+    if (!window.googleTileset) return;
+
+    if (isMoving) {
+        // Lower quality while moving for better performance
+        window.googleTileset.maximumScreenSpaceError = 8;
+        clearTimeout(tileQualityTimeout);
+        tileQualityTimeout = setTimeout(() => {
+            // Return to high quality after stopping
+            if (window.googleTileset) {
+                window.googleTileset.maximumScreenSpaceError = 2;
+            }
+        }, 500);
+    }
+}
+
+// Preload tiles ahead of drone based on heading
+function preloadAhead(heading, speed) {
+    if (!viewer || !window.googleTileset || speed < 5) return;
+
+    const headingRad = Cesium.Math.toRadians(heading);
+    const metersPerDegLat = 111320;
+    const metersPerDegLng = 111320 * Math.cos(Cesium.Math.toRadians(droneState.latitude));
+
+    // Look ahead distances based on speed
+    const lookAheadDistances = [100, 250, 500];
+
+    for (const dist of lookAheadDistances) {
+        const futureLat = droneState.latitude + (Math.cos(headingRad) * dist) / metersPerDegLat;
+        const futureLng = droneState.longitude + (Math.sin(headingRad) * dist) / metersPerDegLng;
+
+        // Sample terrain to trigger tile loading at future positions
+        Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [
+            Cesium.Cartographic.fromDegrees(futureLng, futureLat)
+        ]).catch(() => {});
+    }
+}
+
+// Wait for all visible tiles to load
+function waitForTilesLoaded(timeoutMs = 10000) {
+    return new Promise((resolve) => {
+        const startTime = Date.now();
+
+        const checkLoaded = () => {
+            if (window.tilesFullyLoaded) {
+                resolve(true);
+                return;
+            }
+
+            if (Date.now() - startTime > timeoutMs) {
+                resolve(false); // Timeout
+                return;
+            }
+
+            requestAnimationFrame(checkLoaded);
+        };
+
+        checkLoaded();
+    });
 }
 
 // ============================================
@@ -590,6 +711,15 @@ function updateDrone(deltaTime) {
         droneState.velocityY ** 2 +
         droneState.velocityZ ** 2
     );
+
+    // Adaptive tile quality - lower when moving fast, higher when stopped
+    const isMovingFast = droneState.speed > 5;
+    updateTilesetQuality(isMovingFast);
+
+    // Preload tiles ahead of drone
+    if (droneState.speed > 10) {
+        preloadAhead(droneState.heading, droneState.speed);
+    }
 }
 
 function getTerrainHeight(longitude, latitude) {
@@ -648,8 +778,32 @@ function updateCamera() {
 // Minimap with 2D Satellite Tiles
 // ============================================
 const minimapTileCache = new Map();
-const MINIMAP_ZOOM = 15; // Zoomed out for better overview
+let minimapZoom = 15; // Zoomed out for better overview
+const MINIMAP_ZOOM_MIN = 12;
+const MINIMAP_ZOOM_MAX = 18;
 const MINIMAP_TILE_SIZE = 256;
+
+function zoomMinimapIn() {
+    if (minimapZoom < MINIMAP_ZOOM_MAX) {
+        minimapZoom++;
+        updateMinimap();
+    }
+}
+
+function zoomMinimapOut() {
+    if (minimapZoom > MINIMAP_ZOOM_MIN) {
+        minimapZoom--;
+        updateMinimap();
+    }
+}
+
+// Expose zoom functions globally for HTML onclick handlers
+window.zoomMinimapIn = zoomMinimapIn;
+window.zoomMinimapOut = zoomMinimapOut;
+
+// Expose tile loading helpers globally
+window.waitForTilesLoaded = waitForTilesLoaded;
+window.forceLoadCurrentView = forceLoadCurrentView;
 
 function initMinimap() {
     const minimapCanvas = document.getElementById('minimap-canvas');
@@ -702,10 +856,10 @@ function updateMinimap() {
     ctx.fillRect(0, 0, width, height);
 
     // Get current tile coordinates
-    const centerTile = latLngToTile(droneState.latitude, droneState.longitude, MINIMAP_ZOOM);
+    const centerTile = latLngToTile(droneState.latitude, droneState.longitude, minimapZoom);
 
     // Calculate exact position within tile for smooth scrolling
-    const n = Math.pow(2, MINIMAP_ZOOM);
+    const n = Math.pow(2, minimapZoom);
     const exactTileX = (droneState.longitude + 180) / 360 * n;
     const latRad = droneState.latitude * Math.PI / 180;
     const exactTileY = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
@@ -723,9 +877,9 @@ function updateMinimap() {
         for (let dx = -1; dx <= 1; dx++) {
             const tileX = centerTile.x + dx;
             const tileY = centerTile.y + dy;
-            const key = `${MINIMAP_ZOOM}/${tileX}/${tileY}`;
+            const key = `${minimapZoom}/${tileX}/${tileY}`;
 
-            const tile = loadMinimapTile(tileX, tileY, MINIMAP_ZOOM);
+            const tile = loadMinimapTile(tileX, tileY, minimapZoom);
 
             // Calculate draw position
             const drawX = centerX + (dx * MINIMAP_TILE_SIZE - tileOffsetX) * scale;
@@ -740,8 +894,9 @@ function updateMinimap() {
     ctx.restore();
 
     // Calculate scale for markers (meters per pixel on minimap)
-    const metersPerTile = 156543.03 * Math.cos(droneState.latitude * Math.PI / 180) / Math.pow(2, MINIMAP_ZOOM);
-    const metersPerPixel = metersPerTile / (MINIMAP_TILE_SIZE * scale);
+    // 156543.03 is meters per pixel at zoom 0 at equator
+    const metersPerTilePixel = 156543.03 * Math.cos(droneState.latitude * Math.PI / 180) / Math.pow(2, minimapZoom);
+    const metersPerPixel = metersPerTilePixel / scale;
 
     // Draw restaurant markers with cuisine-based colors
     const cuisineColors = {
@@ -765,6 +920,8 @@ function updateMinimap() {
         'default': '#ff4444'
     };
 
+    // Only show restaurant markers when no active order
+    if (!gameState.currentOrder) {
     loadingState.restaurants.forEach(restaurant => {
         const deltaLng = restaurant.lon - droneState.longitude;
         const deltaLat = restaurant.lat - droneState.latitude;
@@ -807,6 +964,7 @@ function updateMinimap() {
             ctx.fill();
         }
     });
+    }
 
     // Draw pickup marker if active
     if (gameState.currentOrder && gameState.currentOrder.status === 'accepted') {
@@ -1223,21 +1381,17 @@ async function loadRestaurants() {
             console.log('Places service initialized:', placesService);
         }
 
-        // Search for restaurants using Google Places API
-        console.log('Searching for restaurants...');
-        const restaurants = await searchNearbyRestaurants();
+        // Search for REAL restaurants using Google Places API with parallel processing
+        console.log('Searching for real restaurants from Google Places...');
+        const restaurants = await searchNearbyRestaurantsParallel();
 
-        // Redistribute to avoid clustering
-        const distributed = redistributeRestaurants(restaurants);
-        loadingState.restaurants = distributed;
-        console.log(`Loaded ${restaurants.length} restaurants, kept ${distributed.length} after redistribution`);
+        loadingState.restaurants = restaurants;
+        console.log(`Loaded ${restaurants.length} REAL restaurants from Google Places`);
 
     } catch (error) {
         console.error('Could not load restaurants from Google Places:', error);
         console.error('Error stack:', error.stack);
-        // Fallback to generated restaurants
-        console.log('Using fallback generated restaurants');
-        loadingState.restaurants = generateFakeRestaurants();
+        loadingState.restaurants = [];
     }
 
     console.log('Final restaurant count:', loadingState.restaurants.length);
@@ -1245,16 +1399,117 @@ async function loadRestaurants() {
     updateProgress('Restaurants loaded!', 80);
 }
 
+// OPTIMIZED: Parallel search for real restaurants across the map
+async function searchNearbyRestaurantsParallel() {
+    const seenPlaceIds = new Set();
+    const allRestaurants = [];
+
+    // Create a large grid for comprehensive coverage
+    // 9x9 grid covering approximately 14km x 14km
+    const gridSize = 9;
+    const latStep = 0.018;   // ~2km per step
+    const lngStep = 0.024;   // ~2km per step (adjusted for longitude)
+
+    const searchLocations = [];
+    for (let row = 0; row < gridSize; row++) {
+        for (let col = 0; col < gridSize; col++) {
+            const lat = spawnLat + (row - Math.floor(gridSize / 2)) * latStep;
+            const lng = spawnLng + (col - Math.floor(gridSize / 2)) * lngStep;
+            searchLocations.push({ lat, lng });
+        }
+    }
+
+    console.log(`Searching ${searchLocations.length} locations in parallel batches...`);
+
+    // Process in parallel batches of 5 to avoid rate limiting
+    const batchSize = 5;
+    for (let i = 0; i < searchLocations.length; i += batchSize) {
+        const batch = searchLocations.slice(i, i + batchSize);
+
+        // Run batch in parallel
+        const batchPromises = batch.map(async (loc) => {
+            const location = new google.maps.LatLng(loc.lat, loc.lng);
+            try {
+                return await searchAtLocation(location, 'restaurant');
+            } catch (e) {
+                console.warn(`Search failed at ${loc.lat}, ${loc.lng}:`, e);
+                return [];
+            }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+
+        // Process results
+        for (const results of batchResults) {
+            for (const place of results) {
+                if (!seenPlaceIds.has(place.place_id)) {
+                    seenPlaceIds.add(place.place_id);
+                    const allPhotos = place.photos ? place.photos.map(p =>
+                        p.getUrl({ maxWidth: 400, maxHeight: 300 })
+                    ) : [];
+
+                    allRestaurants.push({
+                        lat: place.geometry.location.lat(),
+                        lon: place.geometry.location.lng(),
+                        name: place.name,
+                        cuisine: getCuisineFromTypes(place.types),
+                        amenity: 'restaurant',
+                        placeId: place.place_id,
+                        rating: place.rating,
+                        photoUrl: allPhotos[0] || null,
+                        foodPhotos: allPhotos.slice(1)
+                    });
+                }
+            }
+        }
+
+        console.log(`Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(searchLocations.length / batchSize)}: Found ${allRestaurants.length} restaurants so far`);
+
+        // Small delay between batches
+        if (i + batchSize < searchLocations.length) {
+            await new Promise(r => setTimeout(r, 150));
+        }
+    }
+
+    // Also search for cafes and fast food in parallel at multiple locations
+    const additionalSearches = [];
+    const additionalLocations = [
+        { lat: spawnLat, lng: spawnLng },
+        { lat: spawnLat + latStep, lng: spawnLng },
+        { lat: spawnLat - latStep, lng: spawnLng },
+        { lat: spawnLat, lng: spawnLng + lngStep },
+        { lat: spawnLat, lng: spawnLng - lngStep },
+    ];
+
+    for (const loc of additionalLocations) {
+        const location = new google.maps.LatLng(loc.lat, loc.lng);
+        additionalSearches.push(searchCafes(location).catch(() => []));
+        additionalSearches.push(searchFastFood(location).catch(() => []));
+    }
+
+    const additionalResults = await Promise.all(additionalSearches);
+    for (const results of additionalResults) {
+        for (const place of results) {
+            if (!seenPlaceIds.has(place.placeId)) {
+                seenPlaceIds.add(place.placeId);
+                allRestaurants.push(place);
+            }
+        }
+    }
+
+    console.log(`Found ${allRestaurants.length} unique REAL restaurants total`);
+    return allRestaurants;
+}
+
+// Legacy sequential search (kept for fallback)
 async function searchNearbyRestaurants() {
     const allRestaurants = [];
     const seenPlaceIds = new Set();
 
-    // Search in a wide grid pattern across the map
-    // Create a 5x5 grid covering approximately 4km x 4km
     const searchOffsets = [];
-    const gridSize = 5;
-    const latStep = 0.01;   // ~1.1km per step
-    const lngStep = 0.013;  // ~1.1km per step (adjusted for longitude)
+    const gridSize = 7;
+    const latStep = 0.015;
+    const lngStep = 0.02;
 
     for (let row = 0; row < gridSize; row++) {
         for (let col = 0; col < gridSize; col++) {
@@ -1265,7 +1520,6 @@ async function searchNearbyRestaurants() {
         }
     }
 
-    // Search restaurants at each location (with delay to avoid rate limiting)
     for (let i = 0; i < searchOffsets.length; i++) {
         const offset = searchOffsets[i];
         const searchLat = spawnLat + offset.lat;
@@ -1274,8 +1528,6 @@ async function searchNearbyRestaurants() {
 
         try {
             const results = await searchAtLocation(location, 'restaurant');
-            console.log(`Search ${i + 1}: Found ${results.length} restaurants`);
-
             for (const place of results) {
                 if (!seenPlaceIds.has(place.place_id)) {
                     seenPlaceIds.add(place.place_id);
@@ -1297,7 +1549,6 @@ async function searchNearbyRestaurants() {
                 }
             }
 
-            // Small delay between searches to avoid rate limiting
             if (i < searchOffsets.length - 1) {
                 await new Promise(r => setTimeout(r, 100));
             }
@@ -1306,35 +1557,7 @@ async function searchNearbyRestaurants() {
         }
     }
 
-    // Also search for cafes and fast food at center
-    const centerLocation = new google.maps.LatLng(spawnLat, spawnLng);
-
-    try {
-        const cafes = await searchCafes(centerLocation);
-        for (const place of cafes) {
-            if (!seenPlaceIds.has(place.placeId)) {
-                seenPlaceIds.add(place.placeId);
-                allRestaurants.push(place);
-            }
-        }
-    } catch (e) {
-        console.warn('Cafe search failed:', e);
-    }
-
-    try {
-        const fastFood = await searchFastFood(centerLocation);
-        for (const place of fastFood) {
-            if (!seenPlaceIds.has(place.placeId)) {
-                seenPlaceIds.add(place.placeId);
-                allRestaurants.push(place);
-            }
-        }
-    } catch (e) {
-        console.warn('Fast food search failed:', e);
-    }
-
-    console.log(`Found ${allRestaurants.length} unique restaurants total`);
-    return allRestaurants.slice(0, 150);
+    return allRestaurants;
 }
 
 // Helper function to search at a specific location
@@ -1342,7 +1565,7 @@ function searchAtLocation(location, type) {
     return new Promise((resolve) => {
         const request = {
             location: location,
-            radius: 1500,
+            radius: 2500,  // Increased radius for better coverage
             type: type
         };
 
@@ -1458,52 +1681,71 @@ function generateFakeRestaurants() {
         "Sushi House", "Cafe Milano", "Thai Garden", "BBQ Pit",
         "Golden Wok", "La Trattoria", "Seoul Kitchen", "Curry House",
         "The Grill", "Ocean Catch", "Pho Paradise", "Falafel King",
-        "Noodle House", "The Steakhouse", "Green Garden", "Spice Route"
+        "Noodle House", "The Steakhouse", "Green Garden", "Spice Route",
+        "Pasta Palace", "Wok Express", "Taqueria Luna", "Prime Cuts",
+        "Sakura Sushi", "The Coffee Bean", "Bangkok Kitchen", "Smokehouse",
+        "Dim Sum House", "Olive Garden", "K-BBQ", "Bombay Bistro",
+        "Diner Deluxe", "Lobster Shack", "Saigon Noodles", "Gyro King"
     ];
     const cuisines = ['pizza', 'chinese', 'mexican', 'burger', 'japanese', 'cafe', 'thai', 'bbq',
                       'chinese', 'italian', 'korean', 'indian', 'american', 'seafood', 'vietnamese', 'mediterranean',
-                      'asian', 'steakhouse', 'vegetarian', 'indian'];
+                      'asian', 'steakhouse', 'vegetarian', 'indian', 'pizza', 'chinese', 'mexican', 'burger',
+                      'japanese', 'cafe', 'thai', 'bbq', 'italian', 'korean', 'indian', 'seafood'];
 
     const metersPerDegLat = 111320;
     const metersPerDegLng = 111320 * Math.cos(Cesium.Math.toRadians(spawnLat));
 
-    // Use a grid-based approach for even distribution across the map
-    const gridSize = 8;  // 8x8 grid
-    const mapRadius = 4000;  // 4km radius
+    // Use a large grid for even distribution across the entire map
+    const gridSize = 14;  // 14x14 grid = 196 potential cells
+    const mapRadius = 6000;  // 6km radius (12km x 12km total area)
     const cellSize = (mapRadius * 2) / gridSize;
 
     let restaurantIndex = 0;
 
     for (let row = 0; row < gridSize; row++) {
         for (let col = 0; col < gridSize; col++) {
-            // Skip some cells randomly to avoid perfect grid look (70% chance to place)
-            if (Math.random() > 0.7) continue;
-
-            // Calculate cell center with random offset within cell
+            // Calculate cell center
             const cellCenterX = -mapRadius + (col + 0.5) * cellSize;
             const cellCenterY = -mapRadius + (row + 0.5) * cellSize;
 
-            // Add random jitter within cell (up to 40% of cell size)
-            const jitterX = (Math.random() - 0.5) * cellSize * 0.8;
-            const jitterY = (Math.random() - 0.5) * cellSize * 0.8;
+            // Distance from center
+            const distFromCenter = Math.sqrt(cellCenterX * cellCenterX + cellCenterY * cellCenterY);
 
-            const offsetX = cellCenterX + jitterX;
-            const offsetY = cellCenterY + jitterY;
+            // Skip if too close to spawn point
+            if (distFromCenter < 200) continue;
 
-            // Skip if too close to center (spawn point)
-            const distFromCenter = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
-            if (distFromCenter < 150) continue;
+            // Determine how many restaurants in this cell based on distance
+            // More restaurants closer to center, fewer at edges
+            let restaurantsInCell = 1;
+            if (distFromCenter < 2000) {
+                restaurantsInCell = 2 + Math.floor(Math.random() * 2); // 2-3 near center
+            } else if (distFromCenter < 4000) {
+                restaurantsInCell = 1 + Math.floor(Math.random() * 2); // 1-2 mid range
+            } else {
+                restaurantsInCell = Math.random() > 0.3 ? 1 : 0; // 70% chance at edges
+            }
 
-            restaurants.push({
-                lat: spawnLat + offsetY / metersPerDegLat,
-                lon: spawnLng + offsetX / metersPerDegLng,
-                name: names[restaurantIndex % names.length] + (restaurantIndex >= names.length ? ` ${Math.floor(restaurantIndex / names.length) + 1}` : ''),
-                cuisine: cuisines[restaurantIndex % cuisines.length],
-                amenity: 'restaurant'
-            });
-            restaurantIndex++;
+            for (let r = 0; r < restaurantsInCell; r++) {
+                // Add random jitter within cell
+                const jitterX = (Math.random() - 0.5) * cellSize * 0.85;
+                const jitterY = (Math.random() - 0.5) * cellSize * 0.85;
+
+                const offsetX = cellCenterX + jitterX;
+                const offsetY = cellCenterY + jitterY;
+
+                restaurants.push({
+                    lat: spawnLat + offsetY / metersPerDegLat,
+                    lon: spawnLng + offsetX / metersPerDegLng,
+                    name: names[restaurantIndex % names.length] + (restaurantIndex >= names.length ? ` ${Math.floor(restaurantIndex / names.length) + 1}` : ''),
+                    cuisine: cuisines[restaurantIndex % cuisines.length],
+                    amenity: 'restaurant'
+                });
+                restaurantIndex++;
+            }
         }
     }
+
+    console.log(`Generated ${restaurants.length} fake restaurants across the map`);
 
     // Shuffle the array to randomize order
     for (let i = restaurants.length - 1; i > 0; i--) {
@@ -1514,36 +1756,25 @@ function generateFakeRestaurants() {
     return restaurants;
 }
 
-// Post-process restaurants to ensure even distribution
+// Post-process restaurants to ensure minimum spacing (not too aggressive)
 function redistributeRestaurants(restaurants) {
     if (restaurants.length < 10) return restaurants;
 
-    const minDistance = 200; // Minimum 200m between restaurants
+    const minDistance = 100; // Minimum 100m between restaurants (reduced from 200)
     const metersPerDegLat = 111320;
     const metersPerDegLng = 111320 * Math.cos(Cesium.Math.toRadians(spawnLat));
 
     const result = [];
     const gridCells = new Map();
-    const cellSize = minDistance / 2;
+    const cellSize = minDistance;
 
     for (const restaurant of restaurants) {
         const cellX = Math.floor((restaurant.lon - spawnLng) * metersPerDegLng / cellSize);
         const cellY = Math.floor((restaurant.lat - spawnLat) * metersPerDegLat / cellSize);
         const cellKey = `${cellX},${cellY}`;
 
-        // Check if this cell or adjacent cells already have a restaurant
-        let tooClose = false;
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-                if (gridCells.has(`${cellX + dx},${cellY + dy}`)) {
-                    tooClose = true;
-                    break;
-                }
-            }
-            if (tooClose) break;
-        }
-
-        if (!tooClose) {
+        // Only check exact cell, not adjacent (less aggressive filtering)
+        if (!gridCells.has(cellKey)) {
             result.push(restaurant);
             gridCells.set(cellKey, true);
         }
@@ -3084,7 +3315,7 @@ async function startSimulation() {
 // Pre-loading Functions
 // ============================================
 async function preloadMinimapTiles() {
-    const centerTile = latLngToTile(spawnLat, spawnLng, MINIMAP_ZOOM);
+    const centerTile = latLngToTile(spawnLat, spawnLng, minimapZoom);
 
     const tilesToLoad = [];
     // Load 5x5 grid of tiles around spawn
@@ -3092,7 +3323,7 @@ async function preloadMinimapTiles() {
         for (let dx = -2; dx <= 2; dx++) {
             const tileX = centerTile.x + dx;
             const tileY = centerTile.y + dy;
-            tilesToLoad.push(loadMinimapTileAsync(tileX, tileY, MINIMAP_ZOOM));
+            tilesToLoad.push(loadMinimapTileAsync(tileX, tileY, minimapZoom));
         }
     }
 

@@ -171,6 +171,10 @@
     <div id="minimap-container">
         <div class="minimap-label" id="minimap-label">MAP</div>
         <canvas id="minimap-canvas"></canvas>
+        <div class="minimap-zoom-controls">
+            <button class="minimap-zoom-btn" id="minimap-zoom-in" onclick="zoomMinimapIn()" title="Zoom In">+</button>
+            <button class="minimap-zoom-btn" id="minimap-zoom-out" onclick="zoomMinimapOut()" title="Zoom Out">-</button>
+        </div>
         <div class="minimap-nav-info hidden" id="minimap-nav">
             <span id="nav-distance">0m</span>
             <span id="nav-direction">-></span>

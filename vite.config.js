@@ -8,6 +8,9 @@ export default defineConfig({
     open: true
   },
   build: {
-    chunkSizeWarningLimit: 5000
+    chunkSizeWarningLimit: 5000,
+    target: 'esnext',
+    minify: 'esbuild',
+    sourcemap: false
   }
 });
