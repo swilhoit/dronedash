@@ -3363,6 +3363,12 @@ function setupModal() {
     const searchInput = document.getElementById('location-search');
     const searchBtn = document.getElementById('search-btn');
     const searchStatus = document.getElementById('search-status');
+    const spawnSettingsBtn = document.getElementById('spawn-settings-btn');
+
+    // Settings button on spawn modal
+    spawnSettingsBtn.addEventListener('click', () => {
+        document.getElementById('settings-modal').classList.remove('hidden');
+    });
 
     async function handleSearch() {
         const query = searchInput.value.trim();
@@ -3445,7 +3451,6 @@ async function startSimulation() {
         setupRestaurantClickHandler();
         setupRestaurantModalListeners();
         setupTurboButton();
-        setupSettings();
 
         updateProgress('Ready!', 100);
         await new Promise(r => setTimeout(r, 300));
@@ -3614,4 +3619,5 @@ function prefetchSinglePlaceDetails(placeId) {
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
     setupModal();
+    setupSettings(); // Setup settings early so it works from spawn modal
 });
