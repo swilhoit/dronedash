@@ -856,7 +856,7 @@ function updateDrone(deltaTime) {
 
     // Base values
     const baseAcceleration = 150;   // m/s^2 (snappier response)
-    const baseTurnSpeed = 120;      // degrees/s
+    const baseTurnSpeed = 70;       // degrees/s (smooth turning)
     const baseVerticalSpeed = 50;   // m/s
     const baseMaxSpeed = 150;       // m/s
 
@@ -864,7 +864,7 @@ function updateDrone(deltaTime) {
     const turboMultiplier = isTurbo ? 4.0 : 1.0;
 
     const acceleration = baseAcceleration * turboMultiplier;
-    const turnSpeed = baseTurnSpeed * (isTurbo ? 2.0 : 1.0);  // Faster turning in turbo
+    const turnSpeed = baseTurnSpeed * (isTurbo ? 1.5 : 1.0);  // Slightly faster turning in turbo
     const verticalSpeed = baseVerticalSpeed * turboMultiplier;
     const maxSpeed = baseMaxSpeed * turboMultiplier;
     const drag = isTurbo ? 0.94 : 0.91;  // Much more friction for quicker stops
@@ -896,12 +896,12 @@ function updateDrone(deltaTime) {
 
     if (keys.ArrowLeft) {
         droneState.heading -= turnSpeed * deltaTime;
-        droneState.roll = Cesium.Math.lerp(droneState.roll, 20, 0.1);
+        droneState.roll = Cesium.Math.lerp(droneState.roll, 15, 0.06);  // Smoother banking
     } else if (keys.ArrowRight) {
         droneState.heading += turnSpeed * deltaTime;
-        droneState.roll = Cesium.Math.lerp(droneState.roll, -20, 0.1);
+        droneState.roll = Cesium.Math.lerp(droneState.roll, -15, 0.06);  // Smoother banking
     } else {
-        droneState.roll = Cesium.Math.lerp(droneState.roll, 0, 0.05);
+        droneState.roll = Cesium.Math.lerp(droneState.roll, 0, 0.04);  // Smooth return
     }
 
     // Normalize heading to 0-360
