@@ -2548,13 +2548,18 @@ function createRestaurantMarkers() {
 }
 
 function createRestaurantMarkerWithPhoto(restaurant) {
-    const fallbackUrl = getCuisineFallbackImage(restaurant);
-    // Google Places photos are blocked by CORS - use cuisine-based fallback images directly
-    // (Google images still work for <img> elements like delivery panel, just not canvas)
-    loadFallbackImage(restaurant, fallbackUrl);
+    // Use Google Places photo directly if available (Cesium handles the URL)
+    if (restaurant.photoUrl) {
+        // Create simple billboard with Google photo - no canvas needed
+        addRestaurantEntityWithUrl(restaurant, restaurant.photoUrl);
+    } else {
+        // No Google photo - create canvas marker with fallback image
+        loadFallbackImage(restaurant);
+    }
 }
 
-function loadFallbackImage(restaurant, fallbackUrl) {
+function loadFallbackImage(restaurant) {
+    const fallbackUrl = getCuisineFallbackImage(restaurant);
     const fallbackImg = new Image();
     fallbackImg.crossOrigin = 'anonymous';
 
@@ -2573,6 +2578,42 @@ function loadFallbackImage(restaurant, fallbackUrl) {
     // Route through CORS proxy to ensure canvas can use the image
     const proxiedFallbackUrl = `${CORS_PROXY_URL}?url=${encodeURIComponent(fallbackUrl)}`;
     fallbackImg.src = proxiedFallbackUrl;
+}
+
+// Add restaurant with direct image URL (for Google Places photos)
+function addRestaurantEntityWithUrl(restaurant, imageUrl) {
+    const entity = viewer.entities.add({
+        name: restaurant.name,
+        position: Cesium.Cartesian3.fromDegrees(restaurant.lon, restaurant.lat, 0),
+        billboard: {
+            image: imageUrl,
+            width: 100,
+            height: 100,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 2000),
+            scaleByDistance: new Cesium.NearFarScalar(100, 1.2, 1500, 0.4)
+        },
+        label: {
+            text: restaurant.name,
+            font: 'bold 14px Arial',
+            fillColor: Cesium.Color.WHITE,
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 3,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.TOP,
+            pixelOffset: new Cesium.Cartesian2(0, 10),
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 800)
+        },
+        properties: {
+            restaurant: restaurant
+        }
+    });
+
+    restaurantEntities.push(entity);
 }
 
 // Create a marker canvas with an actual image (2x resolution for sharp text)
