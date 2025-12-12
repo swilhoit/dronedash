@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Simulator - CesiumJS</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Cesium Container -->
+    <div id="cesiumContainer"></div>
+
+    <!-- Spawn Point Modal -->
+    <div id="spawn-modal" class="modal">
+        <div class="modal-content">
+            <h2>Drone Simulator</h2>
+            <p>Search for a location or enter coordinates</p>
+            <div class="input-group">
+                <label for="location-search">Search Location</label>
+                <div class="search-wrapper">
+                    <input type="text" id="location-search" placeholder="e.g., Times Square, NYC">
+                    <button id="search-btn" class="search-btn">Search</button>
+                </div>
+                <div id="search-status" class="search-status"></div>
+            </div>
+            <div class="coord-divider">- or enter coordinates -</div>
+            <div class="input-group">
+                <label for="latitude">Latitude</label>
+                <input type="number" id="latitude" step="any" value="40.7128" placeholder="e.g., 40.7128">
+            </div>
+            <div class="input-group">
+                <label for="longitude">Longitude</label>
+                <input type="number" id="longitude" step="any" value="-74.0060" placeholder="e.g., -74.0060">
+            </div>
+            <div class="preset-locations">
+                <p>Quick Presets:</p>
+                <button class="preset-btn" data-lat="40.7128" data-lng="-74.0060">New York</button>
+                <button class="preset-btn" data-lat="48.8566" data-lng="2.3522">Paris</button>
+                <button class="preset-btn" data-lat="35.6762" data-lng="139.6503">Tokyo</button>
+                <button class="preset-btn" data-lat="51.5074" data-lng="-0.1278">London</button>
+                <button class="preset-btn" data-lat="-33.8688" data-lng="151.2093">Sydney</button>
+            </div>
+            <button id="start-btn" class="start-btn">Start Simulation</button>
+        </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hud hidden">
+        <div class="hud-info">
+            <div>Alt: <span id="altitude">50</span>m</div>
+            <div>Speed: <span id="speed">0</span> m/s</div>
+            <div>Heading: <span id="heading">0</span>°</div>
+        </div>
+        <div class="controls-help">
+            <p>Arrow Keys: Forward/Back/Turn | W/S: Altitude | A/D: Strafe</p>
+        </div>
+    </div>
+
+    <!-- Game Stats Panel -->
+    <div id="game-stats" class="game-stats hidden">
+        <div class="stats-header">
+            <span class="game-logo">DRONE DASH</span>
+            <button id="pause-btn" class="pause-btn">||</button>
+        </div>
+        <div class="stats-row">
+            <div class="stat">
+                <span class="stat-label">Earnings</span>
+                <span class="stat-value" id="earnings">$0.00</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Deliveries</span>
+                <span class="stat-value" id="deliveries">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Streak</span>
+                <span class="stat-value" id="streak">0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Order Queue Panel -->
+    <div id="order-panel" class="order-panel hidden">
+        <div class="panel-header">Available Orders</div>
+        <div id="order-list" class="order-list">
+            <!-- Orders will be populated here -->
+        </div>
+    </div>
+
+    <!-- Active Delivery HUD -->
+    <div id="active-delivery" class="active-delivery hidden">
+        <div class="delivery-phase" id="delivery-phase">PICK UP</div>
+        <div class="delivery-info">
+            <div class="delivery-restaurant" id="delivery-restaurant">
+                <img id="delivery-photo" src="" alt="">
+                <div class="delivery-details">
+                    <div class="delivery-name" id="delivery-name">Restaurant Name</div>
+                    <div class="delivery-address" id="delivery-address">123 Main St</div>
+                </div>
+            </div>
+            <div class="delivery-items" id="delivery-items">
+                <!-- Items list -->
+            </div>
+            <div class="delivery-customer">
+                <span>Delivering to:</span>
+                <strong id="customer-name">Customer Name</strong>
+                <span id="customer-address">456 Oak Ave</span>
+            </div>
+            <div class="delivery-footer">
+                <div class="delivery-timer">
+                    <span>Time:</span>
+                    <span id="delivery-timer">3:00</span>
+                </div>
+                <div class="delivery-distance">
+                    <span>Distance:</span>
+                    <span id="delivery-distance">0m</span>
+                </div>
+                <div class="delivery-pay">
+                    <span>Pay:</span>
+                    <span id="delivery-pay">$0.00</span>
+                </div>
+            </div>
+        </div>
+        <button id="cancel-delivery" class="cancel-btn">Cancel Delivery</button>
+    </div>
+
+    <!-- Delivery Complete Popup -->
+    <div id="delivery-complete" class="delivery-complete hidden">
+        <div class="complete-content">
+            <div class="complete-icon">OK</div>
+            <h3>Delivery Complete!</h3>
+            <div class="complete-breakdown">
+                <div class="breakdown-row">
+                    <span>Base Pay:</span>
+                    <span id="complete-base">$0.00</span>
+                </div>
+                <div class="breakdown-row">
+                    <span>Distance Bonus:</span>
+                    <span id="complete-distance">$0.00</span>
+                </div>
+                <div class="breakdown-row bonus-row" id="tip-row">
+                    <span>Tip:</span>
+                    <span id="complete-tip">$0.00</span>
+                </div>
+                <div class="breakdown-row total-row">
+                    <span>Total:</span>
+                    <span id="complete-total">$0.00</span>
+                </div>
+            </div>
+            <div class="complete-rating" id="complete-rating">
+                Perfect Delivery!
+            </div>
+        </div>
+    </div>
+
+    <!-- Start Game Button -->
+    <div id="start-game-container" class="start-game-container hidden">
+        <button id="start-game-btn" class="start-game-btn">
+            Start Drone Dash
+        </button>
+        <p class="start-hint">Deliver food orders from restaurants to earn money!</p>
+    </div>
+
+    <!-- Mini-map container -->
+    <div id="minimap-container">
+        <div class="minimap-label" id="minimap-label">TOP VIEW</div>
+        <canvas id="minimap-canvas"></canvas>
+        <div class="minimap-nav-info hidden" id="minimap-nav">
+            <span id="nav-distance">0m</span>
+            <span id="nav-direction">-></span>
+        </div>
+    </div>
+
+    <!-- Loading Modal -->
+    <div id="loading-modal" class="modal hidden">
+        <div class="loading-content">
+            <h2>Loading World</h2>
+            <div class="loading-status" id="loading-status">Initializing...</div>
+            <div class="progress-container">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            <div class="progress-text" id="progress-text">0%</div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

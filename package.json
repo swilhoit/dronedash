@@ -1,0 +1,18 @@
+{
+  "name": "drone-sim",
+  "version": "2.0.0",
+  "description": "Drone Simulator with CesiumJS 3D Tiles",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "cesium": "^1.123.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.3",
+    "vite-plugin-cesium": "^1.2.23"
+  }
+}
