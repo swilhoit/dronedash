@@ -2548,99 +2548,25 @@ function createRestaurantMarkers() {
 }
 
 function createRestaurantMarkerWithPhoto(restaurant) {
-    // Use simple canvas markers - no external images needed, always works
-    const canvas = createSimpleMarkerCanvas(restaurant);
-    addRestaurantEntity(restaurant, canvas);
-}
+    // Load image through CORS proxy, draw to canvas, pass to Cesium
+    const imageUrl = getCuisineFallbackImage(restaurant);
+    const proxiedUrl = `${CORS_PROXY_URL}?url=${encodeURIComponent(imageUrl)}`;
 
-// Simple colored marker with emoji and name - no external images
-function createSimpleMarkerCanvas(restaurant) {
-    const scale = 2;
-    const canvas = document.createElement('canvas');
-    canvas.width = 200 * scale;
-    canvas.height = 120 * scale;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(scale, scale);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
 
-    // Get emoji based on cuisine
-    const emoji = getRestaurantEmoji(restaurant);
+    img.onload = () => {
+        const canvas = createMarkerCanvasWithImage(restaurant, img);
+        addRestaurantEntity(restaurant, canvas);
+    };
 
-    // Background with gradient
-    const gradient = ctx.createLinearGradient(0, 0, 200, 120);
-    gradient.addColorStop(0, '#1a1a2e');
-    gradient.addColorStop(1, '#16213e');
+    img.onerror = () => {
+        console.warn('Image failed for:', restaurant.name);
+        const canvas = createMarkerCanvasFallback(restaurant);
+        addRestaurantEntity(restaurant, canvas);
+    };
 
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetY = 4;
-
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.roundRect(5, 5, 190, 90, 12);
-    ctx.fill();
-
-    // Pin triangle
-    ctx.shadowBlur = 0;
-    ctx.beginPath();
-    ctx.moveTo(100, 115);
-    ctx.lineTo(85, 95);
-    ctx.lineTo(115, 95);
-    ctx.closePath();
-    ctx.fill();
-
-    // Border
-    ctx.strokeStyle = '#ff4444';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.roundRect(5, 5, 190, 90, 12);
-    ctx.stroke();
-
-    // Emoji
-    ctx.font = '36px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(emoji, 100, 45);
-
-    // Restaurant name
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 13px Arial';
-    ctx.textAlign = 'center';
-
-    // Truncate name if too long
-    let name = restaurant.name;
-    if (name.length > 22) {
-        name = name.substring(0, 20) + '...';
-    }
-    ctx.fillText(name, 100, 75);
-
-    return canvas;
-}
-
-function getRestaurantEmoji(restaurant) {
-    const name = (restaurant.name || '').toLowerCase();
-    const cuisine = (restaurant.cuisine || '').toLowerCase();
-
-    if (name.includes('pizza') || cuisine.includes('pizza')) return '🍕';
-    if (name.includes('burger') || name.includes('mcdonald') || name.includes('wendy') || name.includes('five guys')) return '🍔';
-    if (name.includes('sushi') || cuisine.includes('japanese') || cuisine.includes('sushi')) return '🍱';
-    if (name.includes('taco') || name.includes('mexican') || cuisine.includes('mexican')) return '🌮';
-    if (name.includes('chinese') || name.includes('wok') || cuisine.includes('chinese')) return '🥡';
-    if (name.includes('thai') || cuisine.includes('thai')) return '🍜';
-    if (name.includes('indian') || name.includes('curry') || cuisine.includes('indian')) return '🍛';
-    if (name.includes('coffee') || name.includes('cafe') || name.includes('starbucks')) return '☕';
-    if (name.includes('donut') || name.includes('dunkin')) return '🍩';
-    if (name.includes('ice cream') || name.includes('baskin')) return '🍦';
-    if (name.includes('chicken') || name.includes('kfc') || name.includes('popeye')) return '🍗';
-    if (name.includes('sandwich') || name.includes('subway') || name.includes('deli')) return '🥪';
-    if (name.includes('seafood') || name.includes('fish')) return '🦐';
-    if (name.includes('steak') || name.includes('grill')) return '🥩';
-    if (name.includes('salad') || name.includes('healthy')) return '🥗';
-    if (name.includes('bakery') || name.includes('bread')) return '🥐';
-    if (name.includes('breakfast') || name.includes('pancake') || name.includes('ihop')) return '🥞';
-    if (cuisine.includes('italian') || name.includes('pasta')) return '🍝';
-    if (cuisine.includes('korean')) return '🍲';
-    if (cuisine.includes('vietnamese') || name.includes('pho')) return '🍜';
-
-    return '🍽️'; // Default
+    img.src = proxiedUrl;
 }
 
 function loadFallbackImage(restaurant) {
