@@ -112,13 +112,193 @@ let deliveryEntity = null;
 // ============================================
 // Menu Database (same as original)
 // ============================================
+// Brand-specific menus with real items
+const brandMenus = {
+    // Fast Food
+    "mcdonald": [
+        { name: "Big Mac", price: 5.99, prep: 3 },
+        { name: "Quarter Pounder w/ Cheese", price: 6.49, prep: 3 },
+        { name: "10pc McNuggets", price: 5.49, prep: 3 },
+        { name: "McChicken", price: 2.49, prep: 2 },
+        { name: "Large Fries", price: 3.79, prep: 2 },
+        { name: "McFlurry", price: 3.99, prep: 2 }
+    ],
+    "burger king": [
+        { name: "Whopper", price: 6.49, prep: 4 },
+        { name: "Whopper Jr.", price: 3.99, prep: 3 },
+        { name: "Chicken Fries", price: 4.49, prep: 3 },
+        { name: "Onion Rings", price: 3.29, prep: 2 },
+        { name: "Impossible Whopper", price: 7.49, prep: 4 }
+    ],
+    "wendy": [
+        { name: "Dave's Single", price: 5.99, prep: 4 },
+        { name: "Baconator", price: 8.49, prep: 5 },
+        { name: "Spicy Chicken Sandwich", price: 5.49, prep: 3 },
+        { name: "Frosty", price: 2.49, prep: 1 },
+        { name: "Chicken Nuggets (10pc)", price: 5.99, prep: 3 }
+    ],
+    "five guys": [
+        { name: "Cheeseburger", price: 11.99, prep: 8 },
+        { name: "Little Bacon Burger", price: 9.49, prep: 6 },
+        { name: "Cajun Fries (Regular)", price: 5.49, prep: 5 },
+        { name: "Hot Dog", price: 6.99, prep: 4 },
+        { name: "Grilled Cheese", price: 6.49, prep: 5 }
+    ],
+    "in-n-out": [
+        { name: "Double-Double", price: 5.25, prep: 5 },
+        { name: "Cheeseburger", price: 3.45, prep: 4 },
+        { name: "Animal Style Fries", price: 4.95, prep: 5 },
+        { name: "Shake (Chocolate)", price: 3.25, prep: 2 }
+    ],
+    "shake shack": [
+        { name: "ShackBurger", price: 7.49, prep: 6 },
+        { name: "SmokeShack", price: 9.49, prep: 6 },
+        { name: "Cheese Fries", price: 4.79, prep: 4 },
+        { name: "Concrete (Shake)", price: 6.29, prep: 3 }
+    ],
+    // Chicken
+    "chick-fil-a": [
+        { name: "Chicken Sandwich", price: 5.25, prep: 4 },
+        { name: "Spicy Deluxe Sandwich", price: 6.55, prep: 4 },
+        { name: "Nuggets (12ct)", price: 6.45, prep: 3 },
+        { name: "Waffle Fries (Large)", price: 3.15, prep: 2 },
+        { name: "Chicken Biscuit", price: 4.09, prep: 3 }
+    ],
+    "popeye": [
+        { name: "Chicken Sandwich", price: 5.99, prep: 5 },
+        { name: "3pc Tenders", price: 6.49, prep: 4 },
+        { name: "Cajun Fries", price: 3.49, prep: 2 },
+        { name: "Red Beans & Rice", price: 2.99, prep: 2 }
+    ],
+    "kfc": [
+        { name: "3pc Chicken Meal", price: 8.99, prep: 5 },
+        { name: "Famous Bowl", price: 6.99, prep: 4 },
+        { name: "Chicken Sandwich", price: 5.49, prep: 4 },
+        { name: "Mashed Potatoes & Gravy", price: 2.99, prep: 2 },
+        { name: "Coleslaw", price: 2.49, prep: 1 }
+    ],
+    "wingstop": [
+        { name: "10pc Classic Wings", price: 15.99, prep: 12 },
+        { name: "Boneless Meal Deal", price: 12.99, prep: 10 },
+        { name: "Cajun Fried Corn", price: 3.49, prep: 3 },
+        { name: "Seasoned Fries", price: 3.99, prep: 3 }
+    ],
+    // Coffee
+    "starbucks": [
+        { name: "Grande Caramel Macchiato", price: 5.95, prep: 4 },
+        { name: "Venti Iced Latte", price: 5.45, prep: 3 },
+        { name: "Grande Cold Brew", price: 4.45, prep: 2 },
+        { name: "Bacon Gouda Sandwich", price: 5.75, prep: 3 },
+        { name: "Butter Croissant", price: 3.95, prep: 1 },
+        { name: "Cake Pop", price: 3.50, prep: 1 }
+    ],
+    "dunkin": [
+        { name: "Medium Iced Coffee", price: 3.49, prep: 2 },
+        { name: "Bacon Egg & Cheese", price: 5.29, prep: 4 },
+        { name: "Half Dozen Donuts", price: 8.49, prep: 2 },
+        { name: "Medium Latte", price: 4.59, prep: 3 },
+        { name: "Hash Browns", price: 2.09, prep: 2 }
+    ],
+    // Mexican
+    "chipotle": [
+        { name: "Chicken Burrito", price: 10.50, prep: 5 },
+        { name: "Steak Bowl", price: 11.75, prep: 5 },
+        { name: "Carnitas Tacos (3)", price: 10.50, prep: 5 },
+        { name: "Chips & Guac", price: 5.95, prep: 2 },
+        { name: "Queso Blanco", price: 2.65, prep: 1 }
+    ],
+    "taco bell": [
+        { name: "Crunchwrap Supreme", price: 5.49, prep: 3 },
+        { name: "Cheesy Gordita Crunch", price: 4.99, prep: 3 },
+        { name: "Nachos BellGrande", price: 5.49, prep: 4 },
+        { name: "Baja Blast (Large)", price: 2.99, prep: 1 },
+        { name: "Cinnamon Twists", price: 1.79, prep: 1 }
+    ],
+    "qdoba": [
+        { name: "Chicken Burrito", price: 9.85, prep: 5 },
+        { name: "Steak Quesadilla", price: 10.60, prep: 6 },
+        { name: "Loaded Tortilla Soup", price: 6.20, prep: 4 },
+        { name: "Chips & 3-Cheese Queso", price: 5.35, prep: 2 }
+    ],
+    // Pizza
+    "domino": [
+        { name: "Large Pepperoni Pizza", price: 14.99, prep: 20 },
+        { name: "Medium MeatZZa", price: 15.99, prep: 18 },
+        { name: "Stuffed Cheesy Bread", price: 7.99, prep: 10 },
+        { name: "Boneless Chicken (8pc)", price: 8.99, prep: 12 }
+    ],
+    "pizza hut": [
+        { name: "Large Pepperoni Lover's", price: 16.99, prep: 22 },
+        { name: "Personal Pan Supreme", price: 6.99, prep: 10 },
+        { name: "Breadsticks", price: 5.99, prep: 8 },
+        { name: "WingStreet Wings (8pc)", price: 9.99, prep: 12 }
+    ],
+    "papa john": [
+        { name: "Large Cheese Pizza", price: 13.99, prep: 18 },
+        { name: "Pepperoni Pizza (XL)", price: 18.99, prep: 22 },
+        { name: "Garlic Knots", price: 5.99, prep: 8 },
+        { name: "Papadia", price: 8.99, prep: 10 }
+    ],
+    // Asian
+    "panda express": [
+        { name: "Orange Chicken Bowl", price: 9.80, prep: 4 },
+        { name: "Kung Pao Chicken Plate", price: 11.20, prep: 5 },
+        { name: "Beijing Beef", price: 10.50, prep: 4 },
+        { name: "Chow Mein (Side)", price: 4.70, prep: 2 },
+        { name: "Cream Cheese Rangoon (3)", price: 2.60, prep: 2 }
+    ],
+    "pf chang": [
+        { name: "Chang's Spicy Chicken", price: 17.50, prep: 15 },
+        { name: "Mongolian Beef", price: 19.95, prep: 15 },
+        { name: "Dynamite Shrimp", price: 14.95, prep: 12 },
+        { name: "Fried Rice", price: 12.50, prep: 8 }
+    ],
+    // Subs/Sandwiches
+    "subway": [
+        { name: "Footlong Italian BMT", price: 9.99, prep: 5 },
+        { name: "6-inch Turkey Breast", price: 6.99, prep: 4 },
+        { name: "Footlong Meatball Sub", price: 8.99, prep: 5 },
+        { name: "Chips", price: 1.79, prep: 1 },
+        { name: "Cookie", price: 1.29, prep: 1 }
+    ],
+    "jersey mike": [
+        { name: "Giant #13 Italian", price: 14.95, prep: 6 },
+        { name: "Regular Club Supreme", price: 11.95, prep: 5 },
+        { name: "Giant Chipotle Cheesesteak", price: 16.50, prep: 8 }
+    ],
+    "jimmy john": [
+        { name: "#4 Turkey Tom", price: 8.50, prep: 3 },
+        { name: "#9 Italian Night Club", price: 10.50, prep: 4 },
+        { name: "Beach Club", price: 10.25, prep: 4 }
+    ],
+    // Misc Fast Casual
+    "panera": [
+        { name: "Broccoli Cheddar Soup (Bowl)", price: 7.99, prep: 3 },
+        { name: "Bacon Turkey Bravo", price: 12.29, prep: 6 },
+        { name: "Greek Salad (Whole)", price: 11.79, prep: 4 },
+        { name: "Mac & Cheese", price: 9.29, prep: 5 }
+    ],
+    "sweetgreen": [
+        { name: "Harvest Bowl", price: 14.95, prep: 5 },
+        { name: "Crispy Rice Bowl", price: 15.50, prep: 5 },
+        { name: "Guacamole Greens", price: 13.95, prep: 4 }
+    ],
+    "cava": [
+        { name: "Greens + Grains Bowl", price: 12.45, prep: 4 },
+        { name: "Grilled Chicken Pita", price: 11.85, prep: 5 },
+        { name: "Harissa Lamb Bowl", price: 13.95, prep: 5 }
+    ]
+};
+
 const menuDatabase = {
     burger: {
         items: [
             { name: "Classic Cheeseburger", price: 8.99, prep: 5 },
             { name: "Double Bacon Burger", price: 12.99, prep: 7 },
-            { name: "Veggie Burger", price: 9.99, prep: 6 },
+            { name: "Mushroom Swiss Burger", price: 10.99, prep: 6 },
+            { name: "BBQ Bacon Burger", price: 11.99, prep: 6 },
             { name: "Large Fries", price: 4.99, prep: 3 },
+            { name: "Onion Rings", price: 5.49, prep: 4 },
             { name: "Milkshake", price: 5.99, prep: 3 }
         ]
     },
@@ -126,48 +306,144 @@ const menuDatabase = {
         items: [
             { name: "Pepperoni Pizza (Large)", price: 18.99, prep: 15 },
             { name: "Margherita Pizza", price: 16.99, prep: 12 },
+            { name: "Supreme Pizza", price: 21.99, prep: 18 },
             { name: "Buffalo Wings (12pc)", price: 14.99, prep: 12 },
-            { name: "Garlic Knots", price: 6.99, prep: 8 }
+            { name: "Garlic Knots (8pc)", price: 6.99, prep: 8 },
+            { name: "Caesar Salad", price: 9.99, prep: 5 }
         ]
     },
     mexican: {
         items: [
-            { name: "Burrito Bowl", price: 11.99, prep: 8 },
-            { name: "Chicken Burrito", price: 10.99, prep: 7 },
-            { name: "Steak Tacos (3)", price: 12.99, prep: 8 },
-            { name: "Nachos Supreme", price: 13.99, prep: 10 }
+            { name: "Carne Asada Burrito", price: 12.99, prep: 8 },
+            { name: "Chicken Burrito Bowl", price: 11.99, prep: 7 },
+            { name: "Street Tacos (4)", price: 11.99, prep: 8 },
+            { name: "Carnitas Quesadilla", price: 10.99, prep: 7 },
+            { name: "Chips & Guacamole", price: 7.99, prep: 3 },
+            { name: "Churros (3)", price: 5.99, prep: 4 }
         ]
     },
     chinese: {
         items: [
-            { name: "Orange Chicken", price: 13.99, prep: 12 },
-            { name: "Kung Pao Chicken", price: 14.99, prep: 12 },
+            { name: "General Tso's Chicken", price: 14.99, prep: 12 },
+            { name: "Beef & Broccoli", price: 15.99, prep: 12 },
+            { name: "Kung Pao Shrimp", price: 16.99, prep: 12 },
+            { name: "Vegetable Lo Mein", price: 12.99, prep: 10 },
             { name: "Fried Rice", price: 10.99, prep: 8 },
-            { name: "Egg Rolls (4)", price: 6.99, prep: 6 }
+            { name: "Egg Rolls (4)", price: 6.99, prep: 6 },
+            { name: "Crab Rangoon (6)", price: 7.99, prep: 6 }
         ]
     },
     japanese: {
         items: [
-            { name: "California Roll (8pc)", price: 12.99, prep: 10 },
-            { name: "Spicy Tuna Roll", price: 14.99, prep: 10 },
-            { name: "Chicken Teriyaki", price: 14.99, prep: 12 },
-            { name: "Ramen Bowl", price: 15.99, prep: 15 }
+            { name: "Dragon Roll (8pc)", price: 16.99, prep: 12 },
+            { name: "Salmon Sashimi (8pc)", price: 18.99, prep: 10 },
+            { name: "Chicken Teriyaki Bento", price: 16.99, prep: 12 },
+            { name: "Tonkotsu Ramen", price: 15.99, prep: 15 },
+            { name: "Gyoza (6pc)", price: 7.99, prep: 8 },
+            { name: "Miso Soup", price: 3.99, prep: 3 }
+        ]
+    },
+    korean: {
+        items: [
+            { name: "Bulgogi Rice Bowl", price: 15.99, prep: 12 },
+            { name: "Korean Fried Chicken", price: 14.99, prep: 15 },
+            { name: "Bibimbap", price: 14.99, prep: 12 },
+            { name: "Japchae", price: 13.99, prep: 10 },
+            { name: "Kimchi Jjigae", price: 12.99, prep: 12 }
+        ]
+    },
+    thai: {
+        items: [
+            { name: "Pad Thai", price: 14.99, prep: 12 },
+            { name: "Green Curry", price: 15.99, prep: 15 },
+            { name: "Massaman Curry", price: 16.99, prep: 15 },
+            { name: "Tom Yum Soup", price: 8.99, prep: 8 },
+            { name: "Thai Iced Tea", price: 4.99, prep: 3 }
+        ]
+    },
+    vietnamese: {
+        items: [
+            { name: "Pho Tai (Rare Beef)", price: 13.99, prep: 10 },
+            { name: "Banh Mi Sandwich", price: 9.99, prep: 6 },
+            { name: "Vermicelli Bowl", price: 12.99, prep: 10 },
+            { name: "Spring Rolls (4)", price: 6.99, prep: 5 },
+            { name: "Vietnamese Iced Coffee", price: 4.99, prep: 3 }
+        ]
+    },
+    indian: {
+        items: [
+            { name: "Chicken Tikka Masala", price: 16.99, prep: 15 },
+            { name: "Lamb Vindaloo", price: 18.99, prep: 15 },
+            { name: "Palak Paneer", price: 14.99, prep: 12 },
+            { name: "Garlic Naan (2)", price: 4.99, prep: 5 },
+            { name: "Samosas (3)", price: 6.99, prep: 6 },
+            { name: "Mango Lassi", price: 4.99, prep: 3 }
+        ]
+    },
+    italian: {
+        items: [
+            { name: "Spaghetti Carbonara", price: 17.99, prep: 15 },
+            { name: "Chicken Parmesan", price: 19.99, prep: 18 },
+            { name: "Fettuccine Alfredo", price: 15.99, prep: 12 },
+            { name: "Lasagna", price: 16.99, prep: 15 },
+            { name: "Bruschetta", price: 8.99, prep: 6 },
+            { name: "Tiramisu", price: 8.99, prep: 3 }
+        ]
+    },
+    mediterranean: {
+        items: [
+            { name: "Chicken Shawarma Plate", price: 14.99, prep: 10 },
+            { name: "Lamb Gyro", price: 12.99, prep: 8 },
+            { name: "Falafel Wrap", price: 10.99, prep: 7 },
+            { name: "Hummus & Pita", price: 7.99, prep: 4 },
+            { name: "Greek Salad", price: 9.99, prep: 5 }
         ]
     },
     cafe: {
         items: [
-            { name: "Latte", price: 5.99, prep: 4 },
-            { name: "Cappuccino", price: 5.49, prep: 4 },
+            { name: "Latte", price: 5.49, prep: 4 },
+            { name: "Cappuccino", price: 4.99, prep: 4 },
+            { name: "Iced Americano", price: 4.49, prep: 3 },
             { name: "Croissant", price: 3.99, prep: 2 },
-            { name: "Avocado Toast", price: 9.99, prep: 6 }
+            { name: "Avocado Toast", price: 9.99, prep: 6 },
+            { name: "Breakfast Sandwich", price: 7.99, prep: 5 }
+        ]
+    },
+    bakery: {
+        items: [
+            { name: "Blueberry Muffin", price: 3.99, prep: 2 },
+            { name: "Chocolate Croissant", price: 4.49, prep: 2 },
+            { name: "Cinnamon Roll", price: 4.99, prep: 3 },
+            { name: "Bagel with Cream Cheese", price: 4.49, prep: 3 },
+            { name: "Fruit Danish", price: 3.99, prep: 2 }
+        ]
+    },
+    bbq: {
+        items: [
+            { name: "Brisket Plate (1/2 lb)", price: 18.99, prep: 5 },
+            { name: "Pulled Pork Sandwich", price: 12.99, prep: 5 },
+            { name: "Baby Back Ribs (Half Rack)", price: 19.99, prep: 8 },
+            { name: "Mac & Cheese", price: 5.99, prep: 3 },
+            { name: "Coleslaw", price: 3.99, prep: 2 },
+            { name: "Cornbread", price: 3.49, prep: 2 }
+        ]
+    },
+    seafood: {
+        items: [
+            { name: "Fish & Chips", price: 16.99, prep: 12 },
+            { name: "Grilled Salmon", price: 22.99, prep: 15 },
+            { name: "Shrimp Basket", price: 14.99, prep: 10 },
+            { name: "Lobster Roll", price: 24.99, prep: 10 },
+            { name: "Clam Chowder", price: 8.99, prep: 5 }
         ]
     },
     default: {
         items: [
             { name: "House Special", price: 15.99, prep: 12 },
             { name: "Chef's Salad", price: 11.99, prep: 6 },
-            { name: "Grilled Chicken", price: 14.99, prep: 12 },
-            { name: "Soup & Sandwich", price: 10.99, prep: 8 }
+            { name: "Grilled Chicken Plate", price: 14.99, prep: 12 },
+            { name: "Soup of the Day", price: 6.99, prep: 5 },
+            { name: "Club Sandwich", price: 12.99, prep: 8 }
         ]
     }
 };
@@ -2656,12 +2932,70 @@ function getMenuCategory(restaurant) {
     const name = (restaurant.name || '').toLowerCase();
     const cuisine = (restaurant.cuisine || '').toLowerCase();
 
-    if (name.includes('pizza') || cuisine.includes('pizza')) return 'pizza';
-    if (name.includes('burger') || cuisine.includes('burger')) return 'burger';
-    if (name.includes('taco') || cuisine.includes('mexican')) return 'mexican';
-    if (name.includes('chinese') || cuisine.includes('chinese')) return 'chinese';
-    if (name.includes('sushi') || cuisine.includes('japanese') || cuisine.includes('sushi')) return 'japanese';
-    if (name.includes('cafe') || name.includes('coffee') || cuisine.includes('cafe')) return 'cafe';
+    // Check for brand-specific menu first
+    for (const brand of Object.keys(brandMenus)) {
+        if (name.includes(brand)) {
+            return { type: 'brand', brand: brand };
+        }
+    }
+
+    // Pizza places
+    if (name.includes('pizza') || name.includes('pizzeria') || cuisine.includes('pizza')) return 'pizza';
+
+    // Burger joints
+    if (name.includes('burger') || name.includes('grill') && !name.includes('bar')) return 'burger';
+
+    // Mexican
+    if (name.includes('taco') || name.includes('burrito') || name.includes('mexican') ||
+        name.includes('cantina') || name.includes('taqueria') || cuisine.includes('mexican')) return 'mexican';
+
+    // Chinese
+    if (name.includes('chinese') || name.includes('wok') || name.includes('panda') ||
+        name.includes('dragon') || name.includes('golden') || cuisine.includes('chinese')) return 'chinese';
+
+    // Japanese
+    if (name.includes('sushi') || name.includes('ramen') || name.includes('japanese') ||
+        name.includes('hibachi') || name.includes('teriyaki') || cuisine.includes('japanese')) return 'japanese';
+
+    // Korean
+    if (name.includes('korean') || name.includes('bbq') && name.includes('k') ||
+        name.includes('bibimbap') || cuisine.includes('korean')) return 'korean';
+
+    // Thai
+    if (name.includes('thai') || name.includes('pad') || cuisine.includes('thai')) return 'thai';
+
+    // Vietnamese
+    if (name.includes('pho') || name.includes('vietnamese') || name.includes('banh') ||
+        name.includes('saigon') || cuisine.includes('vietnamese')) return 'vietnamese';
+
+    // Indian
+    if (name.includes('indian') || name.includes('curry') || name.includes('tandoori') ||
+        name.includes('masala') || name.includes('bombay') || cuisine.includes('indian')) return 'indian';
+
+    // Italian
+    if (name.includes('italian') || name.includes('pasta') || name.includes('trattoria') ||
+        name.includes('ristorante') || cuisine.includes('italian')) return 'italian';
+
+    // Mediterranean/Greek
+    if (name.includes('mediterranean') || name.includes('greek') || name.includes('falafel') ||
+        name.includes('gyro') || name.includes('shawarma') || name.includes('kebab') ||
+        cuisine.includes('mediterranean') || cuisine.includes('greek')) return 'mediterranean';
+
+    // Cafe/Coffee
+    if (name.includes('cafe') || name.includes('coffee') || name.includes('espresso') ||
+        name.includes('roast') || cuisine.includes('cafe')) return 'cafe';
+
+    // Bakery
+    if (name.includes('bakery') || name.includes('donut') || name.includes('bagel') ||
+        name.includes('pastry') || cuisine.includes('bakery')) return 'bakery';
+
+    // BBQ
+    if (name.includes('bbq') || name.includes('barbecue') || name.includes('smokehouse') ||
+        name.includes('brisket') || cuisine.includes('bbq')) return 'bbq';
+
+    // Seafood
+    if (name.includes('seafood') || name.includes('fish') || name.includes('lobster') ||
+        name.includes('crab') || name.includes('shrimp') || cuisine.includes('seafood')) return 'seafood';
 
     return 'default';
 }
@@ -2705,10 +3039,24 @@ function calculateDistanceToPoint(lat, lng) {
 }
 
 function generateOrder(restaurant) {
-    const category = getMenuCategory(restaurant);
-    const menu = menuDatabase[category] || menuDatabase.default;
+    const categoryResult = getMenuCategory(restaurant);
     const customer = customerNames[Math.floor(Math.random() * customerNames.length)];
     const deliveryLocation = generateDeliveryLocation(restaurant);
+
+    // Get menu items based on brand or category
+    let menuItems;
+    let categoryName;
+
+    if (typeof categoryResult === 'object' && categoryResult.type === 'brand') {
+        // Use brand-specific menu (real items for chains like McDonald's, Starbucks, etc.)
+        menuItems = brandMenus[categoryResult.brand];
+        categoryName = categoryResult.brand;
+    } else {
+        // Use generic category menu
+        const menu = menuDatabase[categoryResult] || menuDatabase.default;
+        menuItems = menu.items;
+        categoryName = categoryResult;
+    }
 
     // Get food photos from restaurant or cached place details
     let foodPhotos = restaurant.foodPhotos || [];
@@ -2728,7 +3076,7 @@ function generateOrder(restaurant) {
     const usedItems = new Set();
 
     for (let i = 0; i < numItems; i++) {
-        const item = menu.items[Math.floor(Math.random() * menu.items.length)];
+        const item = menuItems[Math.floor(Math.random() * menuItems.length)];
         if (!usedItems.has(item.name)) {
             usedItems.add(item.name);
 
@@ -2739,7 +3087,7 @@ function generateOrder(restaurant) {
                 itemPhoto = foodPhotos[orderItems.length % foodPhotos.length];
             } else {
                 // Fallback to cuisine-based stock images
-                itemPhoto = getFoodImageForItem(item.name, category);
+                itemPhoto = getFoodImageForItem(item.name, categoryName);
             }
 
             orderItems.push({
