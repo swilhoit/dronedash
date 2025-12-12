@@ -2556,11 +2556,13 @@ function createRestaurantMarkerWithPhoto(restaurant) {
     img.crossOrigin = 'anonymous';
 
     img.onload = () => {
+        console.log('Image loaded:', restaurant.name, img.width, 'x', img.height);
         // Validate image dimensions
         if (img.width > 0 && img.height > 0) {
             try {
                 const canvas = createMarkerCanvasWithImage(restaurant, img);
                 addRestaurantEntity(restaurant, canvas);
+                console.log('Marker created with image for:', restaurant.name);
             } catch (e) {
                 console.warn('Canvas error for:', restaurant.name, e);
                 const canvas = createMarkerCanvasFallback(restaurant);
@@ -2573,8 +2575,8 @@ function createRestaurantMarkerWithPhoto(restaurant) {
         }
     };
 
-    img.onerror = () => {
-        console.warn('Image failed for:', restaurant.name);
+    img.onerror = (e) => {
+        console.warn('Image failed for:', restaurant.name, 'URL:', proxiedUrl.substring(0, 100));
         const canvas = createMarkerCanvasFallback(restaurant);
         addRestaurantEntity(restaurant, canvas);
     };
