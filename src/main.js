@@ -2060,12 +2060,15 @@ function loadFallbackImage(restaurant, fallbackUrl) {
     };
 
     fallbackImg.onerror = () => {
+        // If proxied fallback fails, use text-only marker
         console.warn('Fallback image failed for:', restaurant.name);
         const canvas = createMarkerCanvasFallback(restaurant);
         addRestaurantEntity(restaurant, canvas);
     };
 
-    fallbackImg.src = fallbackUrl;
+    // Route through CORS proxy to ensure canvas can use the image
+    const proxiedFallbackUrl = `${CORS_PROXY_URL}?url=${encodeURIComponent(fallbackUrl)}`;
+    fallbackImg.src = proxiedFallbackUrl;
 }
 
 // Create a marker canvas with an actual image
