@@ -2423,12 +2423,19 @@ function loadFallbackImage(restaurant, fallbackUrl) {
     fallbackImg.src = proxiedFallbackUrl;
 }
 
-// Create a marker canvas with an actual image
+// Create a marker canvas with an actual image (2x resolution for sharp text)
 function createMarkerCanvasWithImage(restaurant, img) {
+    const scale = 2; // 2x resolution for crisp text
     const canvas = document.createElement('canvas');
-    canvas.width = 220;
-    canvas.height = 260;
+    canvas.width = 220 * scale;
+    canvas.height = 260 * scale;
     const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+
+    // Enable crisp text rendering
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
     const centerX = 110;
 
     // Shadow
@@ -2491,9 +2498,9 @@ function createMarkerCanvasWithImage(restaurant, img) {
     ctx.roundRect(18, 145, 184, 65, 10);
     ctx.fill();
 
-    // Restaurant name
+    // Restaurant name - larger, bolder font
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 18px Arial';
+    ctx.font = 'bold 20px Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -2506,11 +2513,11 @@ function createMarkerCanvasWithImage(restaurant, img) {
     }
     ctx.fillText(name, centerX, 168);
 
-    // Cuisine type
+    // Cuisine type - larger font
     if (restaurant.cuisine) {
         ctx.fillStyle = '#00d4ff';
-        ctx.font = 'bold 14px Arial';
-        ctx.fillText(restaurant.cuisine, centerX, 193);
+        ctx.font = 'bold 16px Arial, sans-serif';
+        ctx.fillText(restaurant.cuisine, centerX, 195);
     }
 
     return canvas;
@@ -2922,10 +2929,12 @@ function setupRestaurantModalListeners() {
 }
 
 function createMarkerCanvasFallback(restaurant) {
+    const scale = 2; // 2x resolution for crisp text
     const canvas = document.createElement('canvas');
-    canvas.width = 220;
-    canvas.height = 260;
+    canvas.width = 220 * scale;
+    canvas.height = 260 * scale;
     const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
 
     const centerX = 110;
 
@@ -2976,9 +2985,9 @@ function createMarkerCanvasFallback(restaurant) {
     ctx.roundRect(18, 145, 184, 65, 10);
     ctx.fill();
 
-    // Restaurant name - larger font
+    // Restaurant name - larger, bolder font
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 18px Arial';
+    ctx.font = 'bold 20px Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -2991,11 +3000,11 @@ function createMarkerCanvasFallback(restaurant) {
     }
     ctx.fillText(name, centerX, 168);
 
-    // Cuisine type - larger
+    // Cuisine type - larger font
     if (restaurant.cuisine) {
         ctx.fillStyle = '#00d4ff';
-        ctx.font = 'bold 14px Arial';
-        ctx.fillText(restaurant.cuisine, centerX, 193);
+        ctx.font = 'bold 16px Arial, sans-serif';
+        ctx.fillText(restaurant.cuisine, centerX, 195);
     }
 
     return canvas;
@@ -3365,10 +3374,13 @@ function createPickupMarker(restaurant) {
 }
 
 function createPickupCanvas(restaurantName) {
+    const scale = 2; // 2x resolution for crisp text
     const canvas = document.createElement('canvas');
-    canvas.width = 180;
-    canvas.height = 220;
+    canvas.width = 180 * scale;
+    canvas.height = 220 * scale;
     const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+
     const centerX = 90;
 
     // Outer glow
@@ -3403,14 +3415,14 @@ function createPickupCanvas(restaurantName) {
     ctx.textBaseline = 'middle';
     ctx.fillText('🍴', centerX, 55);
 
-    // PICKUP text
+    // PICKUP text - larger, bolder
     ctx.fillStyle = '#ffcc00';
-    ctx.font = 'bold 16px Arial';
+    ctx.font = 'bold 18px Arial, sans-serif';
     ctx.fillText('PICKUP', centerX, 95);
 
-    // Restaurant name below
+    // Restaurant name below - larger
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 12px Arial';
+    ctx.font = 'bold 14px Arial, sans-serif';
     let name = restaurantName || '';
     if (ctx.measureText(name).width > 150) {
         while (ctx.measureText(name + '...').width > 150 && name.length > 0) {
@@ -3460,10 +3472,13 @@ function createDeliveryMarker(location) {
 }
 
 function createDeliveryCanvas(address, streetViewImg) {
+    const scale = 2; // 2x resolution for crisp text
     const canvas = document.createElement('canvas');
-    canvas.width = 200;
-    canvas.height = 260;
+    canvas.width = 200 * scale;
+    canvas.height = 260 * scale;
     const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+
     const centerX = 100;
 
     // Outer glow
@@ -3523,18 +3538,18 @@ function createDeliveryCanvas(address, streetViewImg) {
     // DELIVER label at bottom of circle
     ctx.fillStyle = 'rgba(0, 255, 136, 0.9)';
     ctx.beginPath();
-    ctx.roundRect(centerX - 45, 118, 90, 22, 4);
+    ctx.roundRect(centerX - 45, 118, 90, 24, 4);
     ctx.fill();
 
     ctx.fillStyle = '#000';
-    ctx.font = 'bold 14px Arial';
+    ctx.font = 'bold 16px Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('DELIVER', centerX, 129);
+    ctx.fillText('DELIVER', centerX, 130);
 
-    // Address below
+    // Address below - larger font
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 12px Arial';
+    ctx.font = 'bold 14px Arial, sans-serif';
     let addr = address || 'Customer';
     if (ctx.measureText(addr).width > 180) {
         while (ctx.measureText(addr + '...').width > 180 && addr.length > 0) {
@@ -3542,7 +3557,7 @@ function createDeliveryCanvas(address, streetViewImg) {
         }
         addr += '...';
     }
-    ctx.fillText(addr, centerX, 240);
+    ctx.fillText(addr, centerX, 242);
 
     return canvas;
 }
