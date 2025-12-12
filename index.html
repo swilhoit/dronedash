@@ -50,12 +50,13 @@
     <div id="hud" class="hud hidden">
         <div class="hud-info">
             <div>Alt: <span id="altitude">50</span>m</div>
-            <div>Speed: <span id="speed">0</span> m/s</div>
+            <div>Speed: <span id="speed">0</span> m/s <span id="turbo-indicator" class="turbo-indicator"></span></div>
             <div>Heading: <span id="heading">0</span>°</div>
         </div>
         <div class="controls-help">
-            <p>Arrow Keys: Forward/Back/Turn | W/S: Altitude | A/D: Strafe</p>
+            <p>Arrow Keys: Forward/Back/Turn | W/S: Altitude | A/D: Strafe | Shift: TURBO</p>
         </div>
+        <button id="turbo-btn" class="turbo-btn">TURBO</button>
     </div>
 
     <!-- Game Stats Panel -->
@@ -103,9 +104,12 @@
                 <!-- Items list -->
             </div>
             <div class="delivery-customer">
-                <span>Delivering to:</span>
-                <strong id="customer-name">Customer Name</strong>
-                <span id="customer-address">456 Oak Ave</span>
+                <img id="delivery-streetview" class="delivery-streetview" src="" alt="Delivery Location">
+                <div class="delivery-customer-info">
+                    <span>Delivering to:</span>
+                    <strong id="customer-name">Customer Name</strong>
+                    <span id="customer-address">456 Oak Ave</span>
+                </div>
             </div>
             <div class="delivery-footer">
                 <div class="delivery-timer">

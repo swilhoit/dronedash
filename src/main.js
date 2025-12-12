@@ -7,6 +7,7 @@ import 'cesium/Build/Cesium/Widgets/widgets.css';
 // ============================================
 const CESIUM_ION_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIyYzg1YmU2My03MzVlLTQzNmItOGVjOS1lYzkwZjkzZjNkMmUiLCJpZCI6Mjg2NTQ5LCJpYXQiOjE3NDI1OTczMTR9.ABaRbmxTbv1A89WB1fwVxEi8oPzsfQmdlAz1E3gbOQA';
 const GOOGLE_API_KEY = 'AIzaSyAHdMOFQoW-UKhIS0vEmkqi7-TNNhpuvtI';
+const CORS_PROXY_URL = 'http://178.156.198.233:8080/proxy';
 
 Cesium.Ion.defaultAccessToken = CESIUM_ION_TOKEN;
 
@@ -44,8 +45,13 @@ const keys = {
     KeyW: false,
     KeyS: false,
     KeyA: false,
-    KeyD: false
+    KeyD: false,
+    ShiftLeft: false,
+    ShiftRight: false
 };
+
+// Turbo state
+let turboEnabled = false;
 
 // Loading state
 let loadingState = {
@@ -210,7 +216,12 @@ async function initCesium() {
         navigationInstructionsInitiallyVisible: false,
         creditContainer: document.createElement('div'),
         shadows: true,
-        terrainShadows: Cesium.ShadowMode.ENABLED
+        terrainShadows: Cesium.ShadowMode.ENABLED,
+        // Performance optimizations
+        requestRenderMode: false,  // Continuous rendering for smooth animation
+        maximumRenderTimeChange: Infinity,
+        targetFrameRate: 60,
+        useBrowserRecommendedResolution: true
     });
 
     // Disable default camera controls - we'll use our own
@@ -220,16 +231,54 @@ async function initCesium() {
     viewer.scene.screenSpaceCameraController.enableTilt = false;
     viewer.scene.screenSpaceCameraController.enableLook = false;
 
+    // Scene performance settings
+    const scene = viewer.scene;
+    scene.fog.enabled = true;
+    scene.fog.density = 0.0001;  // Light fog for depth cue and performance
+    scene.fog.screenSpaceErrorFactor = 2.0;
+
+    // Increase tile cache for smoother experience
+    scene.globe.tileCacheSize = 1000;
+
+    // Preload tiles in view frustum more aggressively
+    scene.globe.preloadAncestors = true;
+    scene.globe.preloadSiblings = true;
+
+    // Optimize terrain loading
+    scene.globe.maximumScreenSpaceError = 2;  // Higher = faster loading, lower quality
+
     updateProgress('Loading Google 3D Tiles...', 30);
 
-    // Try to load Google Photorealistic 3D Tiles
+    // Try to load Google Photorealistic 3D Tiles with optimized settings
     try {
         const tileset = await Cesium.createGooglePhotorealistic3DTileset();
+
+        // Tileset performance optimizations
+        tileset.maximumScreenSpaceError = 8;  // Lower = higher quality, 8-16 is good balance
+        tileset.maximumMemoryUsage = 512;     // MB - increase for better caching
+        tileset.cullRequestsWhileMoving = true;
+        tileset.cullRequestsWhileMovingMultiplier = 60;  // Cull distant requests while moving fast
+        tileset.preloadWhenHidden = true;     // Continue loading when tab not focused
+        tileset.preferLeaves = true;          // Prefer loading leaf tiles for detail
+        tileset.progressiveResolutionHeightFraction = 0.5;  // Show low-res tiles faster
+        tileset.foveatedScreenSpaceError = true;  // Higher detail in center of screen
+        tileset.foveatedConeSize = 0.1;       // Size of high-detail center area
+        tileset.foveatedMinimumScreenSpaceErrorRelaxation = 0.0;
+
+        // Cache and skip LOD settings
+        tileset.skipLevelOfDetail = true;
+        tileset.skipScreenSpaceErrorFactor = 16;
+        tileset.skipLevels = 1;
+        tileset.immediatelyLoadDesiredLevelOfDetail = false;
+        tileset.loadSiblings = true;
+
         viewer.scene.primitives.add(tileset);
         console.log('Google Photorealistic 3D Tiles loaded successfully');
+
+        // Store reference for preloading
+        window.googleTileset = tileset;
     } catch (error) {
         console.warn('Could not load Google 3D Tiles, using default imagery:', error);
-        // Falls back to default Cesium imagery
     }
 
     // Set initial camera position
@@ -244,6 +293,56 @@ async function initCesium() {
 
     loadingState.tilesLoaded = true;
     updateProgress('3D Tiles loaded!', 50);
+
+    // Start preloading tiles around spawn area
+    preloadTilesAroundSpawn();
+}
+
+// Preload tiles in a radius around spawn point
+function preloadTilesAroundSpawn() {
+    if (!viewer) return;
+
+    const preloadRadius = 2000; // meters
+    const preloadAngles = 8;    // directions to preload
+    const preloadAltitudes = [50, 100, 200]; // drone flight altitudes
+
+    console.log('Preloading tiles around spawn area...');
+
+    const metersPerDegLat = 111320;
+    const metersPerDegLng = 111320 * Math.cos(Cesium.Math.toRadians(spawnLat));
+
+    // Create viewpoints around spawn to trigger tile loading
+    const viewpoints = [];
+
+    for (let alt of preloadAltitudes) {
+        for (let i = 0; i < preloadAngles; i++) {
+            const angle = (i / preloadAngles) * Math.PI * 2;
+            const dist = preloadRadius;
+
+            const lat = spawnLat + (Math.cos(angle) * dist) / metersPerDegLat;
+            const lng = spawnLng + (Math.sin(angle) * dist) / metersPerDegLng;
+
+            viewpoints.push({ lat, lng, alt });
+        }
+    }
+
+    // Trigger tile loading by briefly looking at each viewpoint
+    let viewIndex = 0;
+    const preloadInterval = setInterval(() => {
+        if (viewIndex >= viewpoints.length) {
+            clearInterval(preloadInterval);
+            console.log('Tile preloading complete');
+            return;
+        }
+
+        const vp = viewpoints[viewIndex];
+        // Sample terrain heights to trigger loading
+        Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [
+            Cesium.Cartographic.fromDegrees(vp.lng, vp.lat)
+        ]).catch(() => {});
+
+        viewIndex++;
+    }, 50);
 }
 
 // ============================================
@@ -377,11 +476,26 @@ function updateDronePrimitive() {
 // Drone Physics & Movement
 // ============================================
 function updateDrone(deltaTime) {
-    const acceleration = 120;       // m/s^2
-    const turnSpeed = 120;          // degrees/s
-    const verticalSpeed = 40;       // m/s
-    const drag = 0.97;
-    const maxSpeed = 150;           // m/s
+    // Check if turbo is active (shift key or button)
+    const isTurbo = turboEnabled || keys.ShiftLeft || keys.ShiftRight;
+
+    // Base values
+    const baseAcceleration = 120;   // m/s^2
+    const baseTurnSpeed = 120;      // degrees/s
+    const baseVerticalSpeed = 40;   // m/s
+    const baseMaxSpeed = 150;       // m/s
+
+    // Turbo multiplier (2.5x speed!)
+    const turboMultiplier = isTurbo ? 2.5 : 1.0;
+
+    const acceleration = baseAcceleration * turboMultiplier;
+    const turnSpeed = baseTurnSpeed * (isTurbo ? 1.5 : 1.0);  // Slightly faster turning
+    const verticalSpeed = baseVerticalSpeed * turboMultiplier;
+    const maxSpeed = baseMaxSpeed * turboMultiplier;
+    const drag = isTurbo ? 0.98 : 0.97;  // Less drag in turbo
+
+    // Update turbo indicator
+    updateTurboIndicator(isTurbo);
 
     // Calculate forward direction based on heading
     const headingRad = Cesium.Math.toRadians(droneState.heading);
@@ -539,8 +653,8 @@ const MINIMAP_TILE_SIZE = 256;
 
 function initMinimap() {
     const minimapCanvas = document.getElementById('minimap-canvas');
-    minimapCanvas.width = 230;
-    minimapCanvas.height = 230;
+    minimapCanvas.width = 300;
+    minimapCanvas.height = 300;
 }
 
 function latLngToTile(lat, lng, zoom) {
@@ -552,8 +666,8 @@ function latLngToTile(lat, lng, zoom) {
 }
 
 function getMinimapTileUrl(x, y, zoom) {
-    // Use CartoDB light street map tiles
-    return `https://basemaps.cartocdn.com/light_all/${zoom}/${x}/${y}.png`;
+    // Use CartoDB Voyager - colorful street map with nice styling
+    return `https://basemaps.cartocdn.com/rastertiles/voyager/${zoom}/${x}/${y}.png`;
 }
 
 function loadMinimapTile(x, y, zoom) {
@@ -629,7 +743,28 @@ function updateMinimap() {
     const metersPerTile = 156543.03 * Math.cos(droneState.latitude * Math.PI / 180) / Math.pow(2, MINIMAP_ZOOM);
     const metersPerPixel = metersPerTile / (MINIMAP_TILE_SIZE * scale);
 
-    // Draw restaurant markers
+    // Draw restaurant markers with cuisine-based colors
+    const cuisineColors = {
+        'pizza': '#ff6b35',
+        'italian': '#ff6b35',
+        'chinese': '#e63946',
+        'asian': '#e63946',
+        'mexican': '#2a9d8f',
+        'burger': '#f4a261',
+        'american': '#f4a261',
+        'japanese': '#e76f51',
+        'sushi': '#e76f51',
+        'cafe': '#8b5cf6',
+        'coffee': '#8b5cf6',
+        'thai': '#06d6a0',
+        'indian': '#ffd166',
+        'korean': '#ef476f',
+        'seafood': '#118ab2',
+        'vietnamese': '#06d6a0',
+        'mediterranean': '#073b4c',
+        'default': '#ff4444'
+    };
+
     loadingState.restaurants.forEach(restaurant => {
         const deltaLng = restaurant.lon - droneState.longitude;
         const deltaLat = restaurant.lat - droneState.latitude;
@@ -644,21 +779,32 @@ function updateMinimap() {
         const y = centerY + offsetY;
 
         if (x >= -10 && x <= width + 10 && y >= -10 && y <= height + 10) {
-            // Restaurant pin - larger and more visible
-            ctx.fillStyle = '#ff4444';
+            // Get cuisine-based color
+            const cuisine = (restaurant.cuisine || '').toLowerCase();
+            const color = cuisineColors[cuisine] || cuisineColors.default;
+
+            // Draw shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
             ctx.beginPath();
-            ctx.arc(x, y, 7, 0, Math.PI * 2);
+            ctx.arc(x + 1, y + 1, 9, 0, Math.PI * 2);
             ctx.fill();
+
+            // Restaurant pin - larger and color-coded
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y, 9, 0, Math.PI * 2);
+            ctx.fill();
+
+            // White border
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2.5;
             ctx.stroke();
 
-            // Restaurant icon (fork/knife shape)
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 8px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('🍴', x, y);
+            // Inner white dot
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
         }
     });
 
@@ -910,6 +1056,40 @@ function updateHUD() {
 }
 
 // ============================================
+// Turbo Speed Feature
+// ============================================
+function updateTurboIndicator(isTurbo) {
+    const turboBtn = document.getElementById('turbo-btn');
+    const turboIndicator = document.getElementById('turbo-indicator');
+
+    if (turboBtn) {
+        turboBtn.classList.toggle('active', isTurbo);
+    }
+    if (turboIndicator) {
+        turboIndicator.classList.toggle('active', isTurbo);
+        turboIndicator.textContent = isTurbo ? 'TURBO' : '';
+    }
+}
+
+function setupTurboButton() {
+    const turboBtn = document.getElementById('turbo-btn');
+    if (!turboBtn) return;
+
+    // Toggle turbo on click
+    turboBtn.addEventListener('click', () => {
+        turboEnabled = !turboEnabled;
+        turboBtn.classList.toggle('active', turboEnabled);
+    });
+
+    // Also handle touch for mobile
+    turboBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        turboEnabled = !turboEnabled;
+        turboBtn.classList.toggle('active', turboEnabled);
+    });
+}
+
+// ============================================
 // Controls Setup
 // ============================================
 function setupControls() {
@@ -934,24 +1114,43 @@ function setupControls() {
 function setupStreetNamesToggle() {
     const toggleBtn = document.getElementById('street-names-toggle');
 
-    toggleBtn.addEventListener('click', () => {
+    toggleBtn.addEventListener('click', async () => {
         streetLabelsEnabled = !streetLabelsEnabled;
         toggleBtn.classList.toggle('active', streetLabelsEnabled);
 
         if (streetLabelsEnabled) {
-            // Add street labels layer
-            if (!streetLabelsLayer) {
-                streetLabelsLayer = viewer.imageryLayers.addImageryProvider(
-                    new Cesium.UrlTemplateImageryProvider({
-                        url: 'https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png',
+            // Use Cesium's imagery draping on 3D Tiles (requires Cesium 1.124+)
+            if (window.googleTileset && window.googleTileset.imageryLayers) {
+                if (!streetLabelsLayer) {
+                    // Add road/labels imagery directly onto the 3D tileset
+                    const labelsProvider = new Cesium.UrlTemplateImageryProvider({
+                        url: 'https://basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
                         credit: 'CartoDB',
                         minimumLevel: 0,
                         maximumLevel: 18
-                    })
-                );
-                streetLabelsLayer.alpha = 0.9;
+                    });
+                    streetLabelsLayer = window.googleTileset.imageryLayers.addImageryProvider(labelsProvider);
+                    streetLabelsLayer.alpha = 0.95;
+                    console.log('Street labels draped on 3D tiles');
+                } else {
+                    streetLabelsLayer.show = true;
+                }
             } else {
-                streetLabelsLayer.show = true;
+                // Fallback for older Cesium or if tileset not available
+                if (!streetLabelsLayer) {
+                    streetLabelsLayer = viewer.imageryLayers.addImageryProvider(
+                        new Cesium.UrlTemplateImageryProvider({
+                            url: 'https://basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
+                            credit: 'CartoDB',
+                            minimumLevel: 0,
+                            maximumLevel: 18
+                        })
+                    );
+                    streetLabelsLayer.alpha = 0.95;
+                    viewer.imageryLayers.raiseToTop(streetLabelsLayer);
+                } else {
+                    streetLabelsLayer.show = true;
+                }
             }
         } else {
             // Hide street labels layer
@@ -970,16 +1169,26 @@ function setupStreetNamesToggle() {
 // ============================================
 let placesService = null;
 
-// Wait for Google Maps API to be ready
+// Wait for Google Maps API to be ready (with timeout)
 function waitForGoogleMaps() {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         if (typeof google !== 'undefined' && google.maps && google.maps.places) {
+            console.log('Google Maps API already loaded');
             resolve();
         } else {
+            console.log('Waiting for Google Maps API...');
+            let attempts = 0;
+            const maxAttempts = 100; // 10 seconds max
             const checkInterval = setInterval(() => {
+                attempts++;
                 if (typeof google !== 'undefined' && google.maps && google.maps.places) {
                     clearInterval(checkInterval);
+                    console.log('Google Maps API loaded after', attempts * 100, 'ms');
                     resolve();
+                } else if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    console.error('Google Maps API failed to load after 10 seconds');
+                    reject(new Error('Google Maps API timeout'));
                 }
             }, 100);
         }
@@ -1004,24 +1213,34 @@ async function initPlacesService() {
 
 async function loadRestaurants() {
     updateProgress('Loading restaurants...', 60);
+    console.log('loadRestaurants() called');
 
     try {
         // Initialize Google Places service
         if (!placesService) {
+            console.log('Initializing Places service...');
             await initPlacesService();
+            console.log('Places service initialized:', placesService);
         }
 
         // Search for restaurants using Google Places API
+        console.log('Searching for restaurants...');
         const restaurants = await searchNearbyRestaurants();
-        loadingState.restaurants = restaurants;
-        console.log(`Loaded ${loadingState.restaurants.length} restaurants from Google Places`);
+
+        // Redistribute to avoid clustering
+        const distributed = redistributeRestaurants(restaurants);
+        loadingState.restaurants = distributed;
+        console.log(`Loaded ${restaurants.length} restaurants, kept ${distributed.length} after redistribution`);
 
     } catch (error) {
-        console.warn('Could not load restaurants from Google Places:', error);
+        console.error('Could not load restaurants from Google Places:', error);
+        console.error('Error stack:', error.stack);
         // Fallback to generated restaurants
+        console.log('Using fallback generated restaurants');
         loadingState.restaurants = generateFakeRestaurants();
     }
 
+    console.log('Final restaurant count:', loadingState.restaurants.length);
     loadingState.restaurantsLoaded = true;
     updateProgress('Restaurants loaded!', 80);
 }
@@ -1030,14 +1249,21 @@ async function searchNearbyRestaurants() {
     const allRestaurants = [];
     const seenPlaceIds = new Set();
 
-    // Search in multiple directions from spawn point
-    const searchOffsets = [
-        { lat: 0, lng: 0 },           // Center
-        { lat: 0.006, lng: 0 },       // North (~600m)
-        { lat: -0.006, lng: 0 },      // South
-        { lat: 0, lng: 0.008 },       // East
-        { lat: 0, lng: -0.008 },      // West
-    ];
+    // Search in a wide grid pattern across the map
+    // Create a 5x5 grid covering approximately 4km x 4km
+    const searchOffsets = [];
+    const gridSize = 5;
+    const latStep = 0.01;   // ~1.1km per step
+    const lngStep = 0.013;  // ~1.1km per step (adjusted for longitude)
+
+    for (let row = 0; row < gridSize; row++) {
+        for (let col = 0; col < gridSize; col++) {
+            searchOffsets.push({
+                lat: (row - Math.floor(gridSize / 2)) * latStep,
+                lng: (col - Math.floor(gridSize / 2)) * lngStep
+            });
+        }
+    }
 
     // Search restaurants at each location (with delay to avoid rate limiting)
     for (let i = 0; i < searchOffsets.length; i++) {
@@ -1108,7 +1334,7 @@ async function searchNearbyRestaurants() {
     }
 
     console.log(`Found ${allRestaurants.length} unique restaurants total`);
-    return allRestaurants.slice(0, 60);
+    return allRestaurants.slice(0, 150);
 }
 
 // Helper function to search at a specific location
@@ -1116,14 +1342,18 @@ function searchAtLocation(location, type) {
     return new Promise((resolve) => {
         const request = {
             location: location,
-            radius: 1000,
+            radius: 1500,
             type: type
         };
 
+        console.log('searchAtLocation:', { lat: location.lat(), lng: location.lng(), type });
+
         placesService.nearbySearch(request, (results, status) => {
+            console.log('nearbySearch callback - status:', status, 'results:', results?.length || 0);
             if (status === google.maps.places.PlacesServiceStatus.OK && results) {
                 resolve(results);
             } else {
+                console.warn('Search returned status:', status);
                 resolve([]);
             }
         });
@@ -1225,26 +1455,101 @@ function generateFakeRestaurants() {
     const restaurants = [];
     const names = [
         "Joe's Pizza", "Dragon Palace", "Taco Fiesta", "Burger Barn",
-        "Sushi House", "Cafe Milano", "Thai Garden", "BBQ Pit"
+        "Sushi House", "Cafe Milano", "Thai Garden", "BBQ Pit",
+        "Golden Wok", "La Trattoria", "Seoul Kitchen", "Curry House",
+        "The Grill", "Ocean Catch", "Pho Paradise", "Falafel King",
+        "Noodle House", "The Steakhouse", "Green Garden", "Spice Route"
     ];
+    const cuisines = ['pizza', 'chinese', 'mexican', 'burger', 'japanese', 'cafe', 'thai', 'bbq',
+                      'chinese', 'italian', 'korean', 'indian', 'american', 'seafood', 'vietnamese', 'mediterranean',
+                      'asian', 'steakhouse', 'vegetarian', 'indian'];
 
-    for (let i = 0; i < 20; i++) {
-        const angle = (i / 20) * Math.PI * 2;
-        const distance = 200 + Math.random() * 800; // 200-1000m
+    const metersPerDegLat = 111320;
+    const metersPerDegLng = 111320 * Math.cos(Cesium.Math.toRadians(spawnLat));
 
-        const metersPerDegLat = 111320;
-        const metersPerDegLng = 111320 * Math.cos(Cesium.Math.toRadians(spawnLat));
+    // Use a grid-based approach for even distribution across the map
+    const gridSize = 8;  // 8x8 grid
+    const mapRadius = 4000;  // 4km radius
+    const cellSize = (mapRadius * 2) / gridSize;
 
-        restaurants.push({
-            lat: spawnLat + (Math.cos(angle) * distance) / metersPerDegLat,
-            lon: spawnLng + (Math.sin(angle) * distance) / metersPerDegLng,
-            name: names[i % names.length] + (i >= names.length ? ` ${Math.floor(i / names.length) + 1}` : ''),
-            cuisine: ['pizza', 'chinese', 'mexican', 'burger', 'japanese', 'cafe', 'thai', 'bbq'][i % 8],
-            amenity: 'restaurant'
-        });
+    let restaurantIndex = 0;
+
+    for (let row = 0; row < gridSize; row++) {
+        for (let col = 0; col < gridSize; col++) {
+            // Skip some cells randomly to avoid perfect grid look (70% chance to place)
+            if (Math.random() > 0.7) continue;
+
+            // Calculate cell center with random offset within cell
+            const cellCenterX = -mapRadius + (col + 0.5) * cellSize;
+            const cellCenterY = -mapRadius + (row + 0.5) * cellSize;
+
+            // Add random jitter within cell (up to 40% of cell size)
+            const jitterX = (Math.random() - 0.5) * cellSize * 0.8;
+            const jitterY = (Math.random() - 0.5) * cellSize * 0.8;
+
+            const offsetX = cellCenterX + jitterX;
+            const offsetY = cellCenterY + jitterY;
+
+            // Skip if too close to center (spawn point)
+            const distFromCenter = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+            if (distFromCenter < 150) continue;
+
+            restaurants.push({
+                lat: spawnLat + offsetY / metersPerDegLat,
+                lon: spawnLng + offsetX / metersPerDegLng,
+                name: names[restaurantIndex % names.length] + (restaurantIndex >= names.length ? ` ${Math.floor(restaurantIndex / names.length) + 1}` : ''),
+                cuisine: cuisines[restaurantIndex % cuisines.length],
+                amenity: 'restaurant'
+            });
+            restaurantIndex++;
+        }
+    }
+
+    // Shuffle the array to randomize order
+    for (let i = restaurants.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [restaurants[i], restaurants[j]] = [restaurants[j], restaurants[i]];
     }
 
     return restaurants;
+}
+
+// Post-process restaurants to ensure even distribution
+function redistributeRestaurants(restaurants) {
+    if (restaurants.length < 10) return restaurants;
+
+    const minDistance = 200; // Minimum 200m between restaurants
+    const metersPerDegLat = 111320;
+    const metersPerDegLng = 111320 * Math.cos(Cesium.Math.toRadians(spawnLat));
+
+    const result = [];
+    const gridCells = new Map();
+    const cellSize = minDistance / 2;
+
+    for (const restaurant of restaurants) {
+        const cellX = Math.floor((restaurant.lon - spawnLng) * metersPerDegLng / cellSize);
+        const cellY = Math.floor((restaurant.lat - spawnLat) * metersPerDegLat / cellSize);
+        const cellKey = `${cellX},${cellY}`;
+
+        // Check if this cell or adjacent cells already have a restaurant
+        let tooClose = false;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (gridCells.has(`${cellX + dx},${cellY + dy}`)) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            if (tooClose) break;
+        }
+
+        if (!tooClose) {
+            result.push(restaurant);
+            gridCells.set(cellKey, true);
+        }
+    }
+
+    return result;
 }
 
 // Cuisine-based thumbnail images
@@ -1309,57 +1614,163 @@ function getRestaurantThumbnail(restaurant) {
 }
 
 function createRestaurantMarkers() {
-    console.log(`Creating markers for ${loadingState.restaurants.length} restaurants`);
+    console.log(`createRestaurantMarkers() called with ${loadingState.restaurants.length} restaurants`);
+
+    if (!loadingState.restaurants || loadingState.restaurants.length === 0) {
+        console.error('No restaurants to create markers for!');
+        return;
+    }
 
     loadingState.restaurants.forEach((restaurant, index) => {
-        // Use Google Places photo directly in Cesium billboard
-        createRestaurantMarkerDirect(restaurant);
+        if (index === 0) {
+            console.log('First restaurant:', restaurant);
+        }
+        // Create canvas-based marker with photo loaded async
+        createRestaurantMarkerWithPhoto(restaurant);
     });
+
+    console.log('Finished creating restaurant markers');
 }
 
-function createRestaurantMarkerDirect(restaurant) {
-    // Get the Google Places photo URL
-    const photoUrl = restaurant.photoUrl;
+function createRestaurantMarkerWithPhoto(restaurant) {
+    const fallbackUrl = getCuisineFallbackImage(restaurant);
 
-    if (photoUrl) {
-        // Create billboard with photo directly - Cesium handles cross-origin loading
-        const entity = viewer.entities.add({
-            name: restaurant.name,
-            position: Cesium.Cartesian3.fromDegrees(restaurant.lon, restaurant.lat, 0),
-            billboard: {
-                image: photoUrl,
-                width: 120,
-                height: 90,
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                pixelOffset: new Cesium.Cartesian2(0, -30),
-                heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                scaleByDistance: new Cesium.NearFarScalar(100, 1.0, 600, 0.4)
-            },
-            label: {
-                text: restaurant.name.length > 20 ? restaurant.name.substring(0, 18) + '...' : restaurant.name,
-                font: 'bold 14px sans-serif',
-                fillColor: Cesium.Color.WHITE,
-                outlineColor: Cesium.Color.BLACK,
-                outlineWidth: 3,
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                verticalOrigin: Cesium.VerticalOrigin.TOP,
-                pixelOffset: new Cesium.Cartesian2(0, 5),
-                heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                scaleByDistance: new Cesium.NearFarScalar(100, 1.0, 600, 0.5)
-            },
-            properties: {
-                restaurant: restaurant
-            }
-        });
+    // Try Google Places photo first if available, using CORS proxy
+    if (restaurant.photoUrl) {
+        const googleImg = new Image();
+        googleImg.crossOrigin = 'anonymous';
 
-        restaurantEntities.push(entity);
+        // Use CORS proxy to fetch Google Places images
+        const proxiedUrl = `${CORS_PROXY_URL}?url=${encodeURIComponent(restaurant.photoUrl)}`;
+
+        googleImg.onload = () => {
+            // Image loaded via CORS proxy - use it
+            const canvas = createMarkerCanvasWithImage(restaurant, googleImg);
+            addRestaurantEntity(restaurant, canvas);
+        };
+
+        googleImg.onerror = () => {
+            // Proxy failed - fall back to cuisine-based images
+            console.warn('CORS proxy failed for:', restaurant.name, '- using fallback');
+            loadFallbackImage(restaurant, fallbackUrl);
+        };
+
+        googleImg.src = proxiedUrl;
     } else {
-        // Fallback to canvas marker if no photo
+        // No Google photo available - use fallback directly
+        loadFallbackImage(restaurant, fallbackUrl);
+    }
+}
+
+function loadFallbackImage(restaurant, fallbackUrl) {
+    const fallbackImg = new Image();
+    fallbackImg.crossOrigin = 'anonymous';
+
+    fallbackImg.onload = () => {
+        const canvas = createMarkerCanvasWithImage(restaurant, fallbackImg);
+        addRestaurantEntity(restaurant, canvas);
+    };
+
+    fallbackImg.onerror = () => {
+        console.warn('Fallback image failed for:', restaurant.name);
         const canvas = createMarkerCanvasFallback(restaurant);
         addRestaurantEntity(restaurant, canvas);
+    };
+
+    fallbackImg.src = fallbackUrl;
+}
+
+// Create a marker canvas with an actual image
+function createMarkerCanvasWithImage(restaurant, img) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 220;
+    canvas.height = 260;
+    const ctx = canvas.getContext('2d');
+    const centerX = 110;
+
+    // Shadow
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetY = 6;
+
+    // Main card background
+    ctx.fillStyle = '#1a1a2e';
+    ctx.beginPath();
+    ctx.roundRect(10, 10, 200, 210, 16);
+    ctx.fill();
+
+    // Pin point
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#1a1a2e';
+    ctx.beginPath();
+    ctx.moveTo(centerX, 240);
+    ctx.lineTo(centerX - 20, 215);
+    ctx.lineTo(centerX + 20, 215);
+    ctx.closePath();
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = '#ff4444';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.roundRect(10, 10, 200, 210, 16);
+    ctx.stroke();
+
+    // Draw the restaurant photo
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(18, 18, 184, 120, 12);
+    ctx.clip();
+
+    // Scale and center the image to fill the area
+    const imgAspect = img.width / img.height;
+    const boxAspect = 184 / 120;
+    let drawWidth, drawHeight, drawX, drawY;
+
+    if (imgAspect > boxAspect) {
+        drawHeight = 120;
+        drawWidth = 120 * imgAspect;
+        drawX = 18 + (184 - drawWidth) / 2;
+        drawY = 18;
+    } else {
+        drawWidth = 184;
+        drawHeight = 184 / imgAspect;
+        drawX = 18;
+        drawY = 18 + (120 - drawHeight) / 2;
     }
+
+    ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+    ctx.restore();
+
+    // Restaurant name background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    ctx.beginPath();
+    ctx.roundRect(18, 145, 184, 65, 10);
+    ctx.fill();
+
+    // Restaurant name
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    let name = restaurant.name;
+    if (ctx.measureText(name).width > 170) {
+        while (ctx.measureText(name + '...').width > 170 && name.length > 0) {
+            name = name.slice(0, -1);
+        }
+        name += '...';
+    }
+    ctx.fillText(name, centerX, 168);
+
+    // Cuisine type
+    if (restaurant.cuisine) {
+        ctx.fillStyle = '#00d4ff';
+        ctx.font = 'bold 14px Arial';
+        ctx.fillText(restaurant.cuisine, centerX, 193);
+    }
+
+    return canvas;
 }
 
 // Get CORS-friendly image based on restaurant cuisine/type
@@ -1419,8 +1830,10 @@ function addRestaurantEntity(restaurant, canvas) {
             scale: 1.0,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            // Visible from high up: full size at 100m, scales down to 0.5 at 800m
-            scaleByDistance: new Cesium.NearFarScalar(100, 1.2, 800, 0.5)
+            // Only show when nearby (within 600m)
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 600),
+            // Scale based on distance: full size at 50m, scales down at distance
+            scaleByDistance: new Cesium.NearFarScalar(50, 1.2, 500, 0.6)
         },
         properties: {
             restaurant: restaurant
@@ -1765,89 +2178,6 @@ function setupRestaurantModalListeners() {
     });
 }
 
-function createMarkerCanvasWithImage(restaurant, img) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 220;
-    canvas.height = 260;
-    const ctx = canvas.getContext('2d');
-
-    const centerX = 110;
-
-    // Shadow
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-    ctx.shadowBlur = 16;
-    ctx.shadowOffsetY = 6;
-
-    // Main card background
-    ctx.fillStyle = '#1a1a2e';
-    ctx.beginPath();
-    ctx.roundRect(10, 10, 200, 210, 16);
-    ctx.fill();
-
-    // Pin point
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#1a1a2e';
-    ctx.beginPath();
-    ctx.moveTo(centerX, 240);
-    ctx.lineTo(centerX - 20, 215);
-    ctx.lineTo(centerX + 20, 215);
-    ctx.closePath();
-    ctx.fill();
-
-    // Border
-    ctx.strokeStyle = '#ff4444';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.roundRect(10, 10, 200, 210, 16);
-    ctx.stroke();
-
-    // Photo area background
-    ctx.fillStyle = '#2a2a4a';
-    ctx.beginPath();
-    ctx.roundRect(18, 18, 184, 120, 12);
-    ctx.fill();
-
-    // Clip and draw image
-    ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(18, 18, 184, 120, 12);
-    ctx.clip();
-    ctx.drawImage(img, 18, 18, 184, 120);
-    ctx.restore();
-
-    // Restaurant name background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-    ctx.beginPath();
-    ctx.roundRect(18, 145, 184, 65, 10);
-    ctx.fill();
-
-    // Restaurant name - larger font
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 18px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    // Truncate name if too long
-    let name = restaurant.name;
-    if (ctx.measureText(name).width > 170) {
-        while (ctx.measureText(name + '...').width > 170 && name.length > 0) {
-            name = name.slice(0, -1);
-        }
-        name += '...';
-    }
-    ctx.fillText(name, centerX, 168);
-
-    // Rating stars if available - larger
-    if (restaurant.rating) {
-        ctx.fillStyle = '#ffcc00';
-        ctx.font = 'bold 14px Arial';
-        const stars = '★'.repeat(Math.round(restaurant.rating));
-        ctx.fillText(stars + ' ' + restaurant.rating.toFixed(1), centerX, 193);
-    }
-
-    return canvas;
-}
-
 function createMarkerCanvasFallback(restaurant) {
     const canvas = document.createElement('canvas');
     canvas.width = 220;
@@ -1959,10 +2289,14 @@ function generateDeliveryLocation(restaurant) {
     const streetName = streetNames[Math.floor(Math.random() * streetNames.length)];
     const streetSuffix = streetSuffixes[Math.floor(Math.random() * streetSuffixes.length)];
 
+    // Generate Google Street View thumbnail URL
+    const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=200x200&location=${lat},${lng}&fov=90&heading=0&pitch=0&key=${GOOGLE_API_KEY}`;
+
     return {
         latitude: lat,
         longitude: lng,
-        address: `${streetNum} ${streetName} ${streetSuffix}`
+        address: `${streetNum} ${streetName} ${streetSuffix}`,
+        streetViewUrl: streetViewUrl
     };
 }
 
@@ -2279,10 +2613,12 @@ function createDeliveryMarker(location) {
         viewer.entities.remove(deliveryEntity);
     }
 
+    // Create initial marker with placeholder
+    const placeholderCanvas = createDeliveryCanvas(location.address, null);
     deliveryEntity = viewer.entities.add({
         position: Cesium.Cartesian3.fromDegrees(location.longitude, location.latitude, 0),
         billboard: {
-            image: createDeliveryCanvas(location.address),
+            image: placeholderCanvas,
             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
             scale: 1.0,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
@@ -2290,14 +2626,30 @@ function createDeliveryMarker(location) {
             scaleByDistance: new Cesium.NearFarScalar(50, 1.5, 600, 0.8)
         }
     });
+
+    // Load Street View image and update marker
+    if (location.streetViewUrl) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            if (deliveryEntity && deliveryEntity.billboard) {
+                const canvasWithImage = createDeliveryCanvas(location.address, img);
+                deliveryEntity.billboard.image = canvasWithImage;
+            }
+        };
+        img.onerror = () => {
+            console.warn('Street View image failed to load');
+        };
+        img.src = location.streetViewUrl;
+    }
 }
 
-function createDeliveryCanvas(address) {
+function createDeliveryCanvas(address, streetViewImg) {
     const canvas = document.createElement('canvas');
-    canvas.width = 180;
-    canvas.height = 220;
+    canvas.width = 200;
+    canvas.height = 260;
     const ctx = canvas.getContext('2d');
-    const centerX = 90;
+    const centerX = 100;
 
     // Outer glow
     ctx.shadowColor = '#00ff88';
@@ -2306,47 +2658,76 @@ function createDeliveryCanvas(address) {
     // Main pin background
     ctx.fillStyle = '#00ff88';
     ctx.beginPath();
-    ctx.arc(centerX, 70, 60, 0, Math.PI * 2);
+    ctx.arc(centerX, 80, 70, 0, Math.PI * 2);
     ctx.fill();
 
     // Pin point
     ctx.beginPath();
-    ctx.moveTo(centerX, 180);
-    ctx.lineTo(centerX - 35, 115);
-    ctx.lineTo(centerX + 35, 115);
+    ctx.moveTo(centerX, 210);
+    ctx.lineTo(centerX - 40, 135);
+    ctx.lineTo(centerX + 40, 135);
     ctx.closePath();
     ctx.fill();
 
-    // Inner circle (dark)
     ctx.shadowBlur = 0;
-    ctx.fillStyle = '#1a1a2e';
+
+    // Draw Street View image or fallback
+    if (streetViewImg) {
+        // Create circular clip for Street View image
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(centerX, 80, 58, 0, Math.PI * 2);
+        ctx.clip();
+
+        // Draw the street view image centered in the circle
+        const imgSize = 116;
+        ctx.drawImage(streetViewImg, centerX - imgSize/2, 80 - imgSize/2, imgSize, imgSize);
+        ctx.restore();
+
+        // Add slight border around image
+        ctx.strokeStyle = '#1a1a2e';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(centerX, 80, 58, 0, Math.PI * 2);
+        ctx.stroke();
+    } else {
+        // Fallback: Inner circle (dark) with home icon
+        ctx.fillStyle = '#1a1a2e';
+        ctx.beginPath();
+        ctx.arc(centerX, 80, 58, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Home/delivery icon
+        ctx.fillStyle = '#00ff88';
+        ctx.font = '50px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🏠', centerX, 70);
+    }
+
+    // DELIVER label at bottom of circle
+    ctx.fillStyle = 'rgba(0, 255, 136, 0.9)';
     ctx.beginPath();
-    ctx.arc(centerX, 70, 50, 0, Math.PI * 2);
+    ctx.roundRect(centerX - 45, 118, 90, 22, 4);
     ctx.fill();
 
-    // Home/delivery icon
-    ctx.fillStyle = '#00ff88';
-    ctx.font = '40px Arial';
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 14px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🏠', centerX, 55);
-
-    // DELIVER text
-    ctx.fillStyle = '#00ff88';
-    ctx.font = 'bold 16px Arial';
-    ctx.fillText('DELIVER', centerX, 95);
+    ctx.fillText('DELIVER', centerX, 129);
 
     // Address below
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 11px Arial';
+    ctx.font = 'bold 12px Arial';
     let addr = address || 'Customer';
-    if (ctx.measureText(addr).width > 160) {
-        while (ctx.measureText(addr + '...').width > 160 && addr.length > 0) {
+    if (ctx.measureText(addr).width > 180) {
+        while (ctx.measureText(addr + '...').width > 180 && addr.length > 0) {
             addr = addr.slice(0, -1);
         }
         addr += '...';
     }
-    ctx.fillText(addr, centerX, 200);
+    ctx.fillText(addr, centerX, 240);
 
     return canvas;
 }
@@ -2356,6 +2737,7 @@ function updateDeliveryUI() {
     if (!order) return;
 
     const defaultFoodPhoto = 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=300&h=200&fit=crop';
+    const defaultStreetView = 'https://images.unsplash.com/photo-1486325212027-8081e485255e?w=200&h=200&fit=crop';
 
     document.getElementById('delivery-name').textContent = order.restaurant.name;
     document.getElementById('delivery-address').textContent = order.restaurant.address || 'Restaurant Location';
@@ -2369,6 +2751,16 @@ function updateDeliveryUI() {
     photoEl.src = photoUrl;
     photoEl.alt = order.restaurant.name;
     photoEl.onerror = () => { photoEl.src = defaultFoodPhoto; };
+
+    // Set delivery location Street View thumbnail
+    const streetViewEl = document.getElementById('delivery-streetview');
+    if (streetViewEl && order.deliveryLocation.streetViewUrl) {
+        streetViewEl.src = order.deliveryLocation.streetViewUrl;
+        streetViewEl.alt = 'Delivery Location';
+        streetViewEl.onerror = () => { streetViewEl.src = defaultStreetView; };
+    } else if (streetViewEl) {
+        streetViewEl.src = defaultStreetView;
+    }
 
     // Update items with food photos
     const itemsContainer = document.getElementById('delivery-items');
@@ -2652,9 +3044,9 @@ async function startSimulation() {
         updateProgress('Loading map tiles...', 75);
         await preloadMinimapTiles();
 
-        // Pre-load restaurant images
-        updateProgress('Loading restaurant images...', 80);
-        await preloadRestaurantImages();
+        // Skip preloading Google Places photos - they don't have CORS headers
+        // so preloading with crossOrigin fails. Photos work fine in <img> tags directly.
+        updateProgress('Preparing game...', 80);
 
         // Pre-fetch place details for nearby restaurants
         updateProgress('Loading restaurant details...', 88);
@@ -2668,6 +3060,7 @@ async function startSimulation() {
         setupRestaurantClickHandler();
         setupRestaurantModalListeners();
         setupStreetNamesToggle();
+        setupTurboButton();
 
         updateProgress('Ready!', 100);
         await new Promise(r => setTimeout(r, 500));
