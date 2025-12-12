@@ -629,22 +629,27 @@ let tileQualityTimeout = null;
 function updateTilesetQuality(speed, altitude) {
     if (!window.googleTileset || !viewer) return;
 
+    // Base error values per quality preset
+    const presetBase = {
+        'low': { min: 32, max: 64 },
+        'medium': { min: 12, max: 32 },
+        'high': { min: 4, max: 20 }
+    };
+    const preset = presetBase[gameSettings.quality] || presetBase.medium;
+
     // Calculate quality based on speed and altitude
-    // Faster movement and higher altitude = lower quality (higher error value)
-    const speedFactor = Math.min(speed / 50, 1); // 0-1 based on speed (50+ m/s = max)
-    const altitudeFactor = Math.min(altitude / 400, 1); // 0-1 based on altitude (400+ m = max)
+    const speedFactor = Math.min(speed / 50, 1);
+    const altitudeFactor = Math.min(altitude / 400, 1);
     const combinedFactor = Math.max(speedFactor, altitudeFactor * 0.5);
 
     if (speed > 5 || altitude > 200) {
-        // Aggressive quality reduction: 2 (stopped) to 24 (fast/high)
-        const targetError = 2 + (combinedFactor * 22);
+        const targetError = preset.min + (combinedFactor * (preset.max - preset.min));
         window.googleTileset.maximumScreenSpaceError = targetError;
 
         clearTimeout(tileQualityTimeout);
         tileQualityTimeout = setTimeout(() => {
-            // Gradually return to high quality after stopping
             if (window.googleTileset) {
-                window.googleTileset.maximumScreenSpaceError = 2;
+                window.googleTileset.maximumScreenSpaceError = preset.min;
             }
         }, 800);
     }
@@ -1697,26 +1702,84 @@ function updateCacheStats() {
 function applyQualityPreset(preset) {
     if (!window.googleTileset || !viewer) return;
 
+    const scene = viewer.scene;
+    const tileset = window.googleTileset;
+
     switch (preset) {
         case 'low':
-            window.googleTileset.maximumScreenSpaceError = 16;
-            window.googleTileset.maximumMemoryUsage = 512;
-            viewer.scene.fog.density = 0.0002;
-            viewer.resolutionScale = 0.75;
+            // Aggressive settings for big cities / slow devices
+            tileset.maximumScreenSpaceError = 32;  // Much lower detail
+            tileset.maximumMemoryUsage = 256;      // Minimal memory
+            tileset.skipLevelOfDetail = true;
+            tileset.skipScreenSpaceErrorFactor = 32;
+            tileset.skipLevels = 4;                // Skip more LOD levels
+            tileset.immediatelyLoadDesiredLevelOfDetail = false;
+            tileset.progressiveResolutionHeightFraction = 0.5;
+            tileset.foveatedScreenSpaceError = true;
+            tileset.foveatedConeSize = 0.1;        // Smaller high-detail area
+            tileset.dynamicScreenSpaceError = true;
+            tileset.dynamicScreenSpaceErrorFactor = 8.0;  // More aggressive
+            tileset.cullRequestsWhileMoving = true;
+            tileset.cullRequestsWhileMovingMultiplier = 60;
+
+            scene.fog.density = 0.0004;            // More fog to hide pop-in
+            scene.fog.enabled = true;
+            scene.globe.maximumScreenSpaceError = 4;
+            scene.globe.tileCacheSize = 500;
+            viewer.resolutionScale = 0.6;          // Lower render resolution
+            viewer.shadows = false;
+            scene.shadowMap.enabled = false;
+            scene.globe.enableLighting = false;
             break;
+
         case 'medium':
-            window.googleTileset.maximumScreenSpaceError = 8;
-            window.googleTileset.maximumMemoryUsage = 2048;
-            viewer.scene.fog.density = 0.0001;
-            viewer.resolutionScale = 1.0;
+            tileset.maximumScreenSpaceError = 12;
+            tileset.maximumMemoryUsage = 1024;
+            tileset.skipLevelOfDetail = true;
+            tileset.skipScreenSpaceErrorFactor = 16;
+            tileset.skipLevels = 2;
+            tileset.immediatelyLoadDesiredLevelOfDetail = false;
+            tileset.progressiveResolutionHeightFraction = 0.4;
+            tileset.foveatedScreenSpaceError = true;
+            tileset.foveatedConeSize = 0.15;
+            tileset.dynamicScreenSpaceError = true;
+            tileset.dynamicScreenSpaceErrorFactor = 6.0;
+            tileset.cullRequestsWhileMoving = false;
+
+            scene.fog.density = 0.00015;
+            scene.fog.enabled = true;
+            scene.globe.maximumScreenSpaceError = 2;
+            scene.globe.tileCacheSize = 1000;
+            viewer.resolutionScale = 0.85;
+            viewer.shadows = gameSettings.shadows;
+            scene.shadowMap.enabled = gameSettings.shadows;
             break;
+
         case 'high':
-            window.googleTileset.maximumScreenSpaceError = 2;
-            window.googleTileset.maximumMemoryUsage = 4096;
-            viewer.scene.fog.density = 0.00005;
+            tileset.maximumScreenSpaceError = 4;
+            tileset.maximumMemoryUsage = 4096;
+            tileset.skipLevelOfDetail = true;
+            tileset.skipScreenSpaceErrorFactor = 8;
+            tileset.skipLevels = 1;
+            tileset.immediatelyLoadDesiredLevelOfDetail = true;
+            tileset.progressiveResolutionHeightFraction = 0.3;
+            tileset.foveatedScreenSpaceError = true;
+            tileset.foveatedConeSize = 0.2;
+            tileset.dynamicScreenSpaceError = true;
+            tileset.dynamicScreenSpaceErrorFactor = 4.0;
+            tileset.cullRequestsWhileMoving = false;
+
+            scene.fog.density = 0.00005;
+            scene.fog.enabled = gameSettings.fog;
+            scene.globe.maximumScreenSpaceError = 1.5;
+            scene.globe.tileCacheSize = 2000;
             viewer.resolutionScale = 1.0;
+            viewer.shadows = gameSettings.shadows;
+            scene.shadowMap.enabled = gameSettings.shadows;
             break;
     }
+
+    console.log(`Quality preset applied: ${preset}`);
 }
 
 // FPS Counter
