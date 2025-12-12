@@ -96,8 +96,9 @@ let gameState = {
     currentOrder: null,
     orderQueue: [],
     deliveryLocations: [],
-    pickupRadius: 30,
-    deliveryRadius: 25,
+    pickupRadius: 75,      // meters - horizontal distance to trigger pickup
+    deliveryRadius: 60,    // meters - horizontal distance to trigger delivery
+    maxDeliveryAltitude: 50, // meters above ground - can deliver from this height
     orderInterval: null,
     gameTime: 0,
     streak: 0,
@@ -3155,7 +3156,8 @@ function checkDeliveryProgress() {
         const distance = calculateDistanceToPoint(order.restaurant.lat, order.restaurant.lon);
         document.getElementById('delivery-distance').textContent = `${Math.round(distance)}m`;
 
-        if (distance < gameState.pickupRadius && droneState.altitude - getTerrainHeight(droneState.longitude, droneState.latitude) < 10) {
+        const altitudeAboveGround = droneState.altitude - getTerrainHeight(droneState.longitude, droneState.latitude);
+        if (distance < gameState.pickupRadius && altitudeAboveGround < gameState.maxDeliveryAltitude) {
             // Picked up!
             order.status = 'picked_up';
 
@@ -3173,7 +3175,8 @@ function checkDeliveryProgress() {
         const distance = calculateDistanceToPoint(order.deliveryLocation.latitude, order.deliveryLocation.longitude);
         document.getElementById('delivery-distance').textContent = `${Math.round(distance)}m`;
 
-        if (distance < gameState.deliveryRadius && droneState.altitude - getTerrainHeight(droneState.longitude, droneState.latitude) < 10) {
+        const altAboveGround = droneState.altitude - getTerrainHeight(droneState.longitude, droneState.latitude);
+        if (distance < gameState.deliveryRadius && altAboveGround < gameState.maxDeliveryAltitude) {
             // Delivered!
             completeDelivery();
         }
