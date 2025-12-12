@@ -2649,7 +2649,16 @@ function createMarkerCanvasWithImage(restaurant, img) {
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
 
+    if (!ctx) {
+        console.error('Failed to get canvas context for:', restaurant.name);
+        return createMarkerCanvasFallback(restaurant);
+    }
+
     ctx.imageSmoothingEnabled = true;
+
+    // Fill with a test color first to verify canvas works
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(0, 0, 256, 256);
 
     const centerX = 128;
 
