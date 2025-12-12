@@ -1704,11 +1704,11 @@ canvas {
     font-size: 48px;
 }
 
-/* Settings Button */
+/* Settings Button - positioned below minimap */
 .settings-btn {
     position: fixed;
-    top: 20px;
-    right: 20px;
+    top: 355px;
+    right: 25px;
     width: 44px;
     height: 44px;
     background: rgba(30, 30, 50, 0.9);
@@ -1717,7 +1717,7 @@ canvas {
     color: #fff;
     font-size: 22px;
     cursor: pointer;
-    z-index: 100;
+    z-index: 150;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
