@@ -860,9 +860,9 @@ function updateDrone(deltaTime) {
     const isTurbo = turboEnabled || keys.ShiftLeft || keys.ShiftRight;
 
     // Base values
-    const baseAcceleration = 150;   // m/s^2 (snappier response)
+    const baseAcceleration = 180;   // m/s^2 (snappier response)
     const baseTurnSpeed = 70;       // degrees/s (smooth turning)
-    const baseVerticalSpeed = 50;   // m/s
+    const baseVerticalSpeed = 60;   // m/s
     const baseMaxSpeed = 150;       // m/s
 
     // Turbo multiplier (4x speed for intense boost!)
@@ -872,7 +872,7 @@ function updateDrone(deltaTime) {
     const turnSpeed = baseTurnSpeed * (isTurbo ? 1.5 : 1.0);  // Slightly faster turning in turbo
     const verticalSpeed = baseVerticalSpeed * turboMultiplier;
     const maxSpeed = baseMaxSpeed * turboMultiplier;
-    const drag = isTurbo ? 0.94 : 0.91;  // Much more friction for quicker stops
+    const drag = isTurbo ? 0.985 : 0.93;  // Higher drag in turbo = less friction = faster speeds
 
     // Update turbo indicator
     updateTurboIndicator(isTurbo);
@@ -3095,19 +3095,62 @@ function generateDeliveryLocation(restaurant) {
     const lat = restaurant.lat + (Math.cos(angle) * distance) / metersPerDegLat;
     const lng = restaurant.lon + (Math.sin(angle) * distance) / metersPerDegLng;
 
-    const streetNum = Math.floor(Math.random() * 9000) + 100;
-    const streetName = streetNames[Math.floor(Math.random() * streetNames.length)];
-    const streetSuffix = streetSuffixes[Math.floor(Math.random() * streetSuffixes.length)];
-
     // Generate Google Street View thumbnail URL
     const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=200x200&location=${lat},${lng}&fov=90&heading=0&pitch=0&key=${GOOGLE_API_KEY}`;
 
-    return {
+    // Start with placeholder, will be updated with real address
+    const location = {
         latitude: lat,
         longitude: lng,
-        address: `${streetNum} ${streetName} ${streetSuffix}`,
+        address: 'Loading address...',
         streetViewUrl: streetViewUrl
     };
+
+    // Fetch real address via reverse geocoding (async, updates location object)
+    fetchRealAddress(lat, lng, location);
+
+    return location;
+}
+
+// Reverse geocode to get real street address
+function fetchRealAddress(lat, lng, locationObj) {
+    if (!window.google || !window.google.maps) {
+        locationObj.address = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        return;
+    }
+
+    const geocoder = new google.maps.Geocoder();
+    const latlng = { lat: lat, lng: lng };
+
+    geocoder.geocode({ location: latlng }, (results, status) => {
+        if (status === 'OK' && results && results.length > 0) {
+            // Find best residential-style address
+            let bestAddress = null;
+
+            // Priority: street_address > premise > route
+            for (const result of results) {
+                const types = result.types || [];
+                if (types.includes('street_address') || types.includes('premise')) {
+                    bestAddress = result.formatted_address;
+                    break;
+                }
+                if (!bestAddress && types.includes('route')) {
+                    bestAddress = result.formatted_address;
+                }
+            }
+
+            if (bestAddress) {
+                // Clean up address - take first part before city/state
+                const parts = bestAddress.split(',');
+                locationObj.address = parts.slice(0, 2).join(',').trim();
+            } else {
+                locationObj.address = results[0].formatted_address.split(',').slice(0, 2).join(',').trim();
+            }
+        } else {
+            // Fallback to coordinates
+            locationObj.address = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        }
+    });
 }
 
 function calculateDistanceToPoint(lat, lng) {
