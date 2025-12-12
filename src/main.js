@@ -96,9 +96,9 @@ let gameState = {
     currentOrder: null,
     orderQueue: [],
     deliveryLocations: [],
-    pickupRadius: 75,      // meters - horizontal distance to trigger pickup
-    deliveryRadius: 60,    // meters - horizontal distance to trigger delivery
-    maxDeliveryAltitude: 50, // meters above ground - can deliver from this height
+    pickupRadius: 150,      // meters - horizontal distance to trigger pickup
+    deliveryRadius: 150,    // meters - horizontal distance to trigger delivery
+    maxDeliveryAltitude: 150, // meters above ground - can deliver from this height
     orderInterval: null,
     gameTime: 0,
     streak: 0,
