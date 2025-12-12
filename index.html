@@ -49,11 +49,43 @@
 
     <!-- HUD -->
     <div id="hud" class="hud hidden">
-        <div class="hud-info">
-            <div>Alt: <span id="altitude">50</span>m</div>
-            <div>Speed: <span id="speed">0</span> m/s <span id="turbo-indicator" class="turbo-indicator"></span></div>
-            <div>Heading: <span id="heading">0</span>°</div>
+        <!-- Speedometer -->
+        <div class="speedometer">
+            <div class="speedo-ring">
+                <svg class="speedo-svg" viewBox="0 0 200 200">
+                    <defs>
+                        <linearGradient id="speedGradient" x1="0%" y1="100%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:#00ff88;stop-opacity:1" />
+                            <stop offset="50%" style="stop-color:#00d4ff;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#ff4444;stop-opacity:1" />
+                        </linearGradient>
+                    </defs>
+                    <circle class="speedo-track" cx="100" cy="100" r="85" />
+                    <circle class="speedo-progress" id="speedo-progress" cx="100" cy="100" r="85" />
+                </svg>
+                <div class="speedo-content">
+                    <div class="speedo-value" id="speed">0</div>
+                    <div class="speedo-unit">m/s</div>
+                    <div class="speedo-turbo" id="turbo-indicator"></div>
+                </div>
+            </div>
+            <div class="speedo-label">SPEED</div>
         </div>
+
+        <!-- Other HUD Info -->
+        <div class="hud-info">
+            <div class="hud-stat">
+                <span class="stat-label">ALT</span>
+                <span class="stat-value" id="altitude">50</span>
+                <span class="stat-suffix">m</span>
+            </div>
+            <div class="hud-stat">
+                <span class="stat-label">HDG</span>
+                <span class="stat-value" id="heading">0</span>
+                <span class="stat-suffix">°</span>
+            </div>
+        </div>
+
         <div class="controls-help">
             <p>Arrow Keys: Forward/Back/Turn | W/S: Altitude | A/D: Strafe | Shift: TURBO</p>
         </div>

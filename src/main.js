@@ -1487,7 +1487,20 @@ function updateHUD() {
     const altitudeAGL = Math.round(droneState.altitude - terrainHeight);
 
     document.getElementById('altitude').textContent = altitudeAGL;
-    document.getElementById('speed').textContent = droneState.speed.toFixed(1);
+
+    // Update speed display
+    const speedValue = Math.round(droneState.speed);
+    document.getElementById('speed').textContent = speedValue;
+
+    // Update speedometer ring (max speed 600 for turbo)
+    const speedProgress = document.getElementById('speedo-progress');
+    if (speedProgress) {
+        const maxSpeed = 600;
+        const circumference = 534; // 2 * PI * 85
+        const progress = Math.min(droneState.speed / maxSpeed, 1);
+        const offset = circumference * (1 - progress);
+        speedProgress.style.strokeDashoffset = offset;
+    }
 
     let heading = Math.round(droneState.heading);
     if (heading < 0) heading += 360;
