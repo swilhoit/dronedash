@@ -109,6 +109,11 @@ let gameState = {
 let pickupEntity = null;
 let deliveryEntity = null;
 
+// Dynamic restaurant loading - track searched areas
+const searchedAreas = new Set(); // Grid cells we've already searched
+let lastRestaurantCheck = 0;
+let isSearchingRestaurants = false;
+
 // ============================================
 // Menu Database (same as original)
 // ============================================
@@ -2163,6 +2168,176 @@ function searchCafes(location) {
     });
 }
 
+// ============================================
+// Dynamic Restaurant Loading (as drone explores)
+// ============================================
+function getAreaKey(lat, lng) {
+    // Create grid cells of ~2km to track searched areas
+    const gridLat = Math.floor(lat / 0.018);
+    const gridLng = Math.floor(lng / 0.024);
+    return `${gridLat},${gridLng}`;
+}
+
+function getNearestRestaurantDistance() {
+    if (!loadingState.restaurants || loadingState.restaurants.length === 0) {
+        return Infinity;
+    }
+
+    const metersPerDegLat = 111320;
+    const metersPerDegLng = 111320 * Math.cos(Cesium.Math.toRadians(droneState.latitude));
+
+    let minDist = Infinity;
+    for (const restaurant of loadingState.restaurants) {
+        const dLat = (restaurant.lat - droneState.latitude) * metersPerDegLat;
+        const dLng = (restaurant.lon - droneState.longitude) * metersPerDegLng;
+        const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+        if (dist < minDist) minDist = dist;
+    }
+    return minDist;
+}
+
+async function checkAndFetchNearbyRestaurants() {
+    // Don't check too frequently (every 3 seconds)
+    const now = performance.now();
+    if (now - lastRestaurantCheck < 3000) return;
+    lastRestaurantCheck = now;
+
+    // Don't search if already searching
+    if (isSearchingRestaurants) return;
+
+    // Check if current area has been searched
+    const areaKey = getAreaKey(droneState.latitude, droneState.longitude);
+    if (searchedAreas.has(areaKey)) return;
+
+    // Check distance to nearest restaurant
+    const nearestDist = getNearestRestaurantDistance();
+
+    // If nearest restaurant is more than 1.5km away, fetch new ones
+    if (nearestDist > 1500) {
+        console.log(`No nearby restaurants (nearest: ${Math.round(nearestDist)}m) - fetching for area ${areaKey}`);
+        isSearchingRestaurants = true;
+
+        try {
+            const newRestaurants = await fetchRestaurantsAtLocation(droneState.latitude, droneState.longitude);
+
+            if (newRestaurants.length > 0) {
+                // Add to existing restaurants (avoid duplicates)
+                const existingIds = new Set(loadingState.restaurants.map(r => r.placeId));
+                let addedCount = 0;
+
+                for (const restaurant of newRestaurants) {
+                    if (!existingIds.has(restaurant.placeId)) {
+                        loadingState.restaurants.push(restaurant);
+                        createRestaurantMarkerWithPhoto(restaurant);
+                        addedCount++;
+                    }
+                }
+
+                console.log(`Added ${addedCount} new restaurants in area ${areaKey}`);
+            }
+
+            // Mark area as searched
+            searchedAreas.add(areaKey);
+
+            // Also mark adjacent cells to avoid redundant searches
+            const [gridLat, gridLng] = areaKey.split(',').map(Number);
+            for (let dLat = -1; dLat <= 1; dLat++) {
+                for (let dLng = -1; dLng <= 1; dLng++) {
+                    searchedAreas.add(`${gridLat + dLat},${gridLng + dLng}`);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching restaurants:', error);
+        }
+
+        isSearchingRestaurants = false;
+    }
+}
+
+async function fetchRestaurantsAtLocation(lat, lng) {
+    const seenPlaceIds = new Set();
+    const restaurants = [];
+
+    // Search a 3x3 grid around the location
+    const searchLocations = [];
+    const latStep = 0.018;
+    const lngStep = 0.024;
+
+    for (let row = -1; row <= 1; row++) {
+        for (let col = -1; col <= 1; col++) {
+            searchLocations.push({
+                lat: lat + row * latStep,
+                lng: lng + col * lngStep
+            });
+        }
+    }
+
+    // Process in parallel batches
+    const batchSize = 3;
+    for (let i = 0; i < searchLocations.length; i += batchSize) {
+        const batch = searchLocations.slice(i, i + batchSize);
+
+        const batchPromises = batch.map(async (loc) => {
+            const location = new google.maps.LatLng(loc.lat, loc.lng);
+            try {
+                return await searchAtLocation(location, 'restaurant');
+            } catch (e) {
+                return [];
+            }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+
+        for (const results of batchResults) {
+            for (const place of results) {
+                if (!seenPlaceIds.has(place.place_id)) {
+                    seenPlaceIds.add(place.place_id);
+                    const allPhotos = place.photos ? place.photos.map(p =>
+                        p.getUrl({ maxWidth: 400, maxHeight: 300 })
+                    ) : [];
+
+                    restaurants.push({
+                        lat: place.geometry.location.lat(),
+                        lon: place.geometry.location.lng(),
+                        name: place.name,
+                        cuisine: getCuisineFromTypes(place.types),
+                        amenity: 'restaurant',
+                        placeId: place.place_id,
+                        rating: place.rating,
+                        photoUrl: allPhotos[0] || null,
+                        foodPhotos: allPhotos.slice(1)
+                    });
+                }
+            }
+        }
+
+        // Small delay between batches
+        if (i + batchSize < searchLocations.length) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+    }
+
+    // Also search cafes and fast food
+    const location = new google.maps.LatLng(lat, lng);
+    try {
+        const [cafes, fastFood] = await Promise.all([
+            searchCafes(location).catch(() => []),
+            searchFastFood(location).catch(() => [])
+        ]);
+
+        for (const place of [...cafes, ...fastFood]) {
+            if (!seenPlaceIds.has(place.placeId)) {
+                seenPlaceIds.add(place.placeId);
+                restaurants.push(place);
+            }
+        }
+    } catch (e) {
+        console.warn('Additional searches failed:', e);
+    }
+
+    return restaurants;
+}
+
 function getCuisineFromTypes(types) {
     if (!types) return 'restaurant';
 
@@ -3788,6 +3963,8 @@ function animate(timestamp) {
 
     if (gameState.isPlaying) {
         checkDeliveryProgress();
+        // Dynamically load restaurants as drone explores new areas
+        checkAndFetchNearbyRestaurants();
     }
 }
 
@@ -3899,6 +4076,17 @@ async function startSimulation() {
         updateProgress('Creating drone...', 65);
         createDrone();
         createRestaurantMarkers();
+
+        // Mark initial spawn area as searched (9x9 grid was searched on load)
+        const gridSize = 9;
+        const centerLat = Math.floor(spawnLat / 0.018);
+        const centerLng = Math.floor(spawnLng / 0.024);
+        for (let row = -Math.floor(gridSize / 2); row <= Math.floor(gridSize / 2); row++) {
+            for (let col = -Math.floor(gridSize / 2); col <= Math.floor(gridSize / 2); col++) {
+                searchedAreas.add(`${centerLat + row},${centerLng + col}`);
+            }
+        }
+        console.log(`Marked ${searchedAreas.size} initial area cells as searched`);
 
         // Pre-load minimap tiles
         updateProgress('Loading minimap...', 75);
