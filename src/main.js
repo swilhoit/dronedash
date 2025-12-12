@@ -305,6 +305,9 @@ async function initCesium() {
         // Store reference for preloading
         window.googleTileset = tileset;
 
+        // Apply initial settings (in case user changed them before starting)
+        tileset.show = gameSettings.tiles3D;
+
         // Tile loading event listeners for monitoring
         tileset.allTilesLoaded.addEventListener(() => {
             console.log('All visible tiles loaded!');
