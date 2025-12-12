@@ -941,7 +941,7 @@ function updateMinimap() {
     });
     }
 
-    // Draw pickup marker if active
+    // Draw pickup marker if active - BOLD GREEN
     if (gameState.currentOrder && gameState.currentOrder.status === 'accepted') {
         const restaurant = gameState.currentOrder.restaurant;
         const deltaLng = restaurant.lon - droneState.longitude;
@@ -956,24 +956,30 @@ function updateMinimap() {
         const x = centerX + offsetX;
         const y = centerY + offsetY;
 
-        // Pulsing pickup marker
-        ctx.fillStyle = '#ffcc00';
+        // Outer glow
+        ctx.fillStyle = 'rgba(0, 255, 100, 0.3)';
         ctx.beginPath();
-        ctx.arc(x, y, 10, 0, Math.PI * 2);
+        ctx.arc(x, y, 20, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 3;
+
+        // Bold green pickup marker
+        ctx.fillStyle = '#00ff55';
+        ctx.beginPath();
+        ctx.arc(x, y, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 4;
         ctx.stroke();
 
         // P label
         ctx.fillStyle = '#000';
-        ctx.font = 'bold 12px Arial';
+        ctx.font = 'bold 14px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('P', x, y);
     }
 
-    // Draw delivery marker if active
+    // Draw delivery marker if active - BOLD GREEN
     if (gameState.currentOrder && gameState.currentOrder.status === 'picked_up') {
         const delivery = gameState.currentOrder.deliveryLocation;
         const deltaLng = delivery.longitude - droneState.longitude;
@@ -988,35 +994,39 @@ function updateMinimap() {
         const x = centerX + offsetX;
         const y = centerY + offsetY;
 
-        // Delivery marker
-        ctx.fillStyle = '#00ff88';
+        // Outer glow
+        ctx.fillStyle = 'rgba(0, 255, 100, 0.3)';
         ctx.beginPath();
-        ctx.arc(x, y, 10, 0, Math.PI * 2);
+        ctx.arc(x, y, 20, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 3;
+
+        // Bold green delivery marker
+        ctx.fillStyle = '#00ff55';
+        ctx.beginPath();
+        ctx.arc(x, y, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 4;
         ctx.stroke();
 
         // D label
         ctx.fillStyle = '#000';
-        ctx.font = 'bold 12px Arial';
+        ctx.font = 'bold 14px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('D', x, y);
     }
 
-    // Draw navigation line to target
+    // Draw navigation line to target - BOLD GREEN
     if (gameState.currentOrder) {
-        let targetLat, targetLng, lineColor;
+        let targetLat, targetLng;
 
         if (gameState.currentOrder.status === 'accepted') {
             targetLat = gameState.currentOrder.restaurant.lat;
             targetLng = gameState.currentOrder.restaurant.lon;
-            lineColor = '#ffcc00';
         } else if (gameState.currentOrder.status === 'picked_up') {
             targetLat = gameState.currentOrder.deliveryLocation.latitude;
             targetLng = gameState.currentOrder.deliveryLocation.longitude;
-            lineColor = '#00ff88';
         }
 
         if (targetLat && targetLng) {
@@ -1043,17 +1053,34 @@ function updateMinimap() {
                 lineEndY = centerY + offsetY;
             }
 
-            // Draw dashed line
+            // Draw bold green navigation line with glow
             ctx.save();
-            ctx.strokeStyle = lineColor;
-            ctx.lineWidth = 2;
-            ctx.setLineDash([5, 5]);
-            ctx.globalAlpha = 0.7;
+
+            // Outer glow
+            ctx.strokeStyle = 'rgba(0, 255, 85, 0.4)';
+            ctx.lineWidth = 10;
+            ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.moveTo(centerX, centerY);
             ctx.lineTo(lineEndX, lineEndY);
             ctx.stroke();
-            ctx.setLineDash([]);
+
+            // Main bold green line
+            ctx.strokeStyle = '#00ff55';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(lineEndX, lineEndY);
+            ctx.stroke();
+
+            // White center line for visibility
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(lineEndX, lineEndY);
+            ctx.stroke();
+
             ctx.restore();
         }
     }
