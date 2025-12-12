@@ -2218,10 +2218,10 @@ function addRestaurantEntity(restaurant, canvas) {
             scale: 1.0,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            // Only show when nearby (within 600m)
-            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 600),
-            // Scale based on distance: full size at 50m, scales down at distance
-            scaleByDistance: new Cesium.NearFarScalar(50, 1.2, 500, 0.6)
+            // Show restaurants from further away (2km range)
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 2000),
+            // Scale based on distance: full size nearby, smaller at distance
+            scaleByDistance: new Cesium.NearFarScalar(100, 1.2, 1500, 0.4)
         },
         properties: {
             restaurant: restaurant
