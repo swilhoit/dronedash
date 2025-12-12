@@ -2556,8 +2556,21 @@ function createRestaurantMarkerWithPhoto(restaurant) {
     img.crossOrigin = 'anonymous';
 
     img.onload = () => {
-        const canvas = createMarkerCanvasWithImage(restaurant, img);
-        addRestaurantEntity(restaurant, canvas);
+        // Validate image dimensions
+        if (img.width > 0 && img.height > 0) {
+            try {
+                const canvas = createMarkerCanvasWithImage(restaurant, img);
+                addRestaurantEntity(restaurant, canvas);
+            } catch (e) {
+                console.warn('Canvas error for:', restaurant.name, e);
+                const canvas = createMarkerCanvasFallback(restaurant);
+                addRestaurantEntity(restaurant, canvas);
+            }
+        } else {
+            console.warn('Invalid image dimensions for:', restaurant.name);
+            const canvas = createMarkerCanvasFallback(restaurant);
+            addRestaurantEntity(restaurant, canvas);
+        }
     };
 
     img.onerror = () => {
@@ -2627,101 +2640,96 @@ function addRestaurantEntityWithUrl(restaurant, imageUrl) {
     restaurantEntities.push(entity);
 }
 
-// Create a marker canvas with an actual image (2x resolution for sharp text)
+// Create a marker canvas with an actual image
 function createMarkerCanvasWithImage(restaurant, img) {
-    const scale = 2; // 2x resolution for crisp text
     const canvas = document.createElement('canvas');
-    canvas.width = 220 * scale;
-    canvas.height = 260 * scale;
+    canvas.width = 256;  // Power of 2 for WebGL
+    canvas.height = 256;
     const ctx = canvas.getContext('2d');
-    ctx.scale(scale, scale);
 
-    // Enable crisp text rendering
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
 
-    const centerX = 110;
+    const centerX = 128;
 
     // Shadow
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-    ctx.shadowBlur = 16;
-    ctx.shadowOffsetY = 6;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 4;
 
     // Main card background
     ctx.fillStyle = '#1a1a2e';
     ctx.beginPath();
-    ctx.roundRect(10, 10, 200, 210, 16);
+    ctx.roundRect(8, 8, 240, 220, 12);
     ctx.fill();
 
     // Pin point
     ctx.shadowBlur = 0;
-    ctx.fillStyle = '#1a1a2e';
     ctx.beginPath();
-    ctx.moveTo(centerX, 240);
-    ctx.lineTo(centerX - 20, 215);
-    ctx.lineTo(centerX + 20, 215);
+    ctx.moveTo(centerX, 250);
+    ctx.lineTo(centerX - 15, 228);
+    ctx.lineTo(centerX + 15, 228);
     ctx.closePath();
     ctx.fill();
 
     // Border
     ctx.strokeStyle = '#ff4444';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.roundRect(10, 10, 200, 210, 16);
+    ctx.roundRect(8, 8, 240, 220, 12);
     ctx.stroke();
 
     // Draw the restaurant photo
     ctx.save();
     ctx.beginPath();
-    ctx.roundRect(18, 18, 184, 120, 12);
+    ctx.roundRect(16, 16, 224, 130, 8);
     ctx.clip();
 
     // Scale and center the image to fill the area
-    const imgAspect = img.width / img.height;
-    const boxAspect = 184 / 120;
+    const imgAspect = img.width / img.height || 1;
+    const boxAspect = 224 / 130;
     let drawWidth, drawHeight, drawX, drawY;
 
     if (imgAspect > boxAspect) {
-        drawHeight = 120;
-        drawWidth = 120 * imgAspect;
-        drawX = 18 + (184 - drawWidth) / 2;
-        drawY = 18;
+        drawHeight = 130;
+        drawWidth = 130 * imgAspect;
+        drawX = 16 + (224 - drawWidth) / 2;
+        drawY = 16;
     } else {
-        drawWidth = 184;
-        drawHeight = 184 / imgAspect;
-        drawX = 18;
-        drawY = 18 + (120 - drawHeight) / 2;
+        drawWidth = 224;
+        drawHeight = 224 / imgAspect;
+        drawX = 16;
+        drawY = 16 + (130 - drawHeight) / 2;
     }
 
     ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
     ctx.restore();
 
     // Restaurant name background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
     ctx.beginPath();
-    ctx.roundRect(18, 145, 184, 65, 10);
+    ctx.roundRect(16, 152, 224, 68, 8);
     ctx.fill();
 
-    // Restaurant name - larger, bolder font
+    // Restaurant name
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 20px Arial, sans-serif';
+    ctx.font = 'bold 18px Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     let name = restaurant.name;
-    if (ctx.measureText(name).width > 170) {
-        while (ctx.measureText(name + '...').width > 170 && name.length > 0) {
+    if (ctx.measureText(name).width > 200) {
+        while (ctx.measureText(name + '...').width > 200 && name.length > 0) {
             name = name.slice(0, -1);
         }
         name += '...';
     }
-    ctx.fillText(name, centerX, 168);
+    ctx.fillText(name, centerX, 175);
 
-    // Cuisine type - larger font
+    // Cuisine type
     if (restaurant.cuisine) {
         ctx.fillStyle = '#00d4ff';
-        ctx.font = 'bold 16px Arial, sans-serif';
-        ctx.fillText(restaurant.cuisine, centerX, 195);
+        ctx.font = 'bold 14px Arial, sans-serif';
+        ctx.fillText(restaurant.cuisine, centerX, 200);
     }
 
     return canvas;
@@ -3133,83 +3141,61 @@ function setupRestaurantModalListeners() {
 }
 
 function createMarkerCanvasFallback(restaurant) {
-    const scale = 2; // 2x resolution for crisp text
     const canvas = document.createElement('canvas');
-    canvas.width = 220 * scale;
-    canvas.height = 260 * scale;
+    canvas.width = 256;
+    canvas.height = 256;
     const ctx = canvas.getContext('2d');
-    ctx.scale(scale, scale);
 
-    const centerX = 110;
+    const centerX = 128;
 
-    // Shadow
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-    ctx.shadowBlur = 16;
-    ctx.shadowOffsetY = 6;
-
-    // Main card background
+    // Background
     ctx.fillStyle = '#1a1a2e';
     ctx.beginPath();
-    ctx.roundRect(10, 10, 200, 210, 16);
+    ctx.roundRect(8, 8, 240, 220, 12);
     ctx.fill();
 
-    // Pin point
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#1a1a2e';
+    // Pin
     ctx.beginPath();
-    ctx.moveTo(centerX, 240);
-    ctx.lineTo(centerX - 20, 215);
-    ctx.lineTo(centerX + 20, 215);
+    ctx.moveTo(centerX, 250);
+    ctx.lineTo(centerX - 15, 228);
+    ctx.lineTo(centerX + 15, 228);
     ctx.closePath();
     ctx.fill();
 
     // Border
     ctx.strokeStyle = '#ff4444';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.roundRect(10, 10, 200, 210, 16);
+    ctx.roundRect(8, 8, 240, 220, 12);
     ctx.stroke();
 
-    // Icon area background
+    // Icon area
     ctx.fillStyle = '#2a2a4a';
     ctx.beginPath();
-    ctx.roundRect(18, 18, 184, 120, 12);
+    ctx.roundRect(16, 16, 224, 130, 8);
     ctx.fill();
 
-    // Food icon - larger
-    ctx.fillStyle = '#ff6b6b';
-    ctx.font = '60px Arial';
+    // Food emoji
+    ctx.font = '50px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🍽️', centerX, 80);
+    ctx.fillText('🍽️', centerX, 85);
 
-    // Restaurant name background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    // Name background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
     ctx.beginPath();
-    ctx.roundRect(18, 145, 184, 65, 10);
+    ctx.roundRect(16, 152, 224, 68, 8);
     ctx.fill();
 
-    // Restaurant name - larger, bolder font
+    // Name
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 20px Arial, sans-serif';
+    ctx.font = 'bold 16px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    let name = restaurant.name;
-    if (ctx.measureText(name).width > 170) {
-        while (ctx.measureText(name + '...').width > 170 && name.length > 0) {
-            name = name.slice(0, -1);
-        }
-        name += '...';
-    }
-    ctx.fillText(name, centerX, 168);
-
-    // Cuisine type - larger font
-    if (restaurant.cuisine) {
-        ctx.fillStyle = '#00d4ff';
-        ctx.font = 'bold 16px Arial, sans-serif';
-        ctx.fillText(restaurant.cuisine, centerX, 195);
-    }
+    let name = restaurant.name || 'Restaurant';
+    if (name.length > 20) name = name.substring(0, 18) + '...';
+    ctx.fillText(name, centerX, 185);
 
     return canvas;
 }
