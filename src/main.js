@@ -3,6 +3,19 @@ import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 
 // ============================================
+// Service Worker Registration (tile caching)
+// ============================================
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+        .then((registration) => {
+            console.log('Tile cache service worker registered:', registration.scope);
+        })
+        .catch((error) => {
+            console.warn('Service worker registration failed:', error);
+        });
+}
+
+// ============================================
 // Configuration
 // ============================================
 const CESIUM_ION_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIyYzg1YmU2My03MzVlLTQzNmItOGVjOS1lYzkwZjkzZjNkMmUiLCJpZCI6Mjg2NTQ5LCJpYXQiOjE3NDI1OTczMTR9.ABaRbmxTbv1A89WB1fwVxEi8oPzsfQmdlAz1E3gbOQA';
@@ -68,10 +81,6 @@ let loadingState = {
 // Restaurant markers
 let restaurantEntities = [];
 let restaurantLabels = [];
-
-// Street labels overlay layer
-let streetLabelsLayer = null;
-let streetLabelsEnabled = false;
 
 // Cache for pre-fetched place details
 const placeDetailsCache = new Map();
@@ -319,21 +328,20 @@ async function initCesium() {
     });
 
     loadingState.tilesLoaded = true;
-    updateProgress('3D Tiles loaded!', 50);
-
-    // Start preloading tiles around spawn area
-    preloadTilesAroundSpawn();
+    updateProgress('3D Tiles loaded!', 40);
 }
 
-// Preload tiles in a radius around spawn point
-function preloadTilesAroundSpawn() {
+// Aggressive preload tiles in a large radius around spawn point
+// Returns a promise that resolves when preloading is complete
+async function preloadTilesAroundSpawn(progressCallback) {
     if (!viewer) return;
 
-    const preloadRadii = [500, 1000, 2000, 3000, 4000]; // Multiple rings
-    const preloadAngles = 16;   // More directions to preload
-    const preloadAltitudes = [30, 50, 100, 200, 400]; // More drone flight altitudes
+    // Much larger area for high-altitude flying
+    const preloadRadii = [250, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000, 8000];
+    const preloadAngles = 24;   // More directions
+    const preloadAltitudes = [30, 50, 100, 200, 300, 500, 800]; // Include high altitudes
 
-    console.log('Preloading tiles around spawn area...');
+    console.log('Preloading tiles around spawn area (this may take a minute)...');
 
     const metersPerDegLat = 111320;
     const metersPerDegLng = 111320 * Math.cos(Cesium.Math.toRadians(spawnLat));
@@ -341,53 +349,88 @@ function preloadTilesAroundSpawn() {
     // Create viewpoints around spawn to trigger tile loading
     const viewpoints = [];
 
-    // Add center point at various altitudes
+    // Add center point at various altitudes first (most important)
     for (let alt of preloadAltitudes) {
-        viewpoints.push({ lat: spawnLat, lng: spawnLng, alt });
+        viewpoints.push({ lat: spawnLat, lng: spawnLng, alt, priority: 0 });
     }
 
-    // Add rings of viewpoints
-    for (let radius of preloadRadii) {
+    // Add rings of viewpoints - closer rings first
+    for (let ri = 0; ri < preloadRadii.length; ri++) {
+        const radius = preloadRadii[ri];
         for (let alt of preloadAltitudes) {
             for (let i = 0; i < preloadAngles; i++) {
                 const angle = (i / preloadAngles) * Math.PI * 2;
-
                 const lat = spawnLat + (Math.cos(angle) * radius) / metersPerDegLat;
                 const lng = spawnLng + (Math.sin(angle) * radius) / metersPerDegLng;
-
-                viewpoints.push({ lat, lng, alt });
+                viewpoints.push({ lat, lng, alt, priority: ri });
             }
         }
     }
 
+    // Sort by priority (closer viewpoints first)
+    viewpoints.sort((a, b) => a.priority - b.priority);
+
     console.log(`Preloading ${viewpoints.length} viewpoints...`);
 
-    // Trigger tile loading by sampling terrain and moving camera frustum
-    let viewIndex = 0;
-    const preloadInterval = setInterval(() => {
-        if (viewIndex >= viewpoints.length) {
-            clearInterval(preloadInterval);
-            console.log('Tile preloading complete');
-            return;
-        }
+    // Save original camera position
+    const originalPosition = viewer.camera.position.clone();
+    const originalHeading = viewer.camera.heading;
+    const originalPitch = viewer.camera.pitch;
 
-        const vp = viewpoints[viewIndex];
+    return new Promise((resolve) => {
+        let viewIndex = 0;
+        const totalViews = viewpoints.length;
 
-        // Sample terrain heights to trigger loading
-        Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [
-            Cesium.Cartographic.fromDegrees(vp.lng, vp.lat)
-        ]).catch(() => {});
+        const preloadInterval = setInterval(() => {
+            // Process multiple viewpoints per frame for speed
+            const batchSize = 5;
+            for (let b = 0; b < batchSize && viewIndex < totalViews; b++) {
+                const vp = viewpoints[viewIndex];
 
-        // Also request tiles by updating the tileset's view
-        if (window.googleTileset) {
-            const position = Cesium.Cartesian3.fromDegrees(vp.lng, vp.lat, vp.alt);
-            const boundingSphere = new Cesium.BoundingSphere(position, 100);
-            window.googleTileset.requestContent && window.googleTileset.root &&
-                viewer.scene.preloadView && viewer.scene.preloadView(boundingSphere);
-        }
+                // Move camera to trigger tile loading at this viewpoint
+                viewer.camera.setView({
+                    destination: Cesium.Cartesian3.fromDegrees(vp.lng, vp.lat, vp.alt + 50),
+                    orientation: {
+                        heading: 0,
+                        pitch: Cesium.Math.toRadians(-45),
+                        roll: 0
+                    }
+                });
 
-        viewIndex++;
-    }, 30); // Faster interval
+                // Force a render to process tile requests
+                viewer.scene.render();
+
+                viewIndex++;
+            }
+
+            // Update progress
+            const progress = Math.round((viewIndex / totalViews) * 100);
+            if (progressCallback) {
+                progressCallback(progress, viewIndex, totalViews);
+            }
+
+            if (viewIndex >= totalViews) {
+                clearInterval(preloadInterval);
+
+                // Restore camera to spawn position
+                viewer.camera.setView({
+                    destination: Cesium.Cartesian3.fromDegrees(spawnLng, spawnLat, 500),
+                    orientation: {
+                        heading: originalHeading,
+                        pitch: Cesium.Math.toRadians(-30),
+                        roll: 0
+                    }
+                });
+
+                console.log('Tile preloading complete - waiting for tiles to finish loading...');
+
+                // Wait a bit for pending tile requests to complete
+                setTimeout(() => {
+                    resolve();
+                }, 2000);
+            }
+        }, 16); // ~60fps
+    });
 }
 
 // Force load tiles in current view - call this after camera moves
@@ -403,22 +446,55 @@ function forceLoadCurrentView() {
     }
 }
 
-// Adaptive quality - lower quality while moving, higher when stopped
+// Adaptive quality - aggressively lower quality while moving fast
 let tileQualityTimeout = null;
-function updateTilesetQuality(isMoving) {
-    if (!window.googleTileset) return;
+function updateTilesetQuality(speed, altitude) {
+    if (!window.googleTileset || !viewer) return;
 
-    if (isMoving) {
-        // Lower quality while moving for better performance
-        window.googleTileset.maximumScreenSpaceError = 8;
+    // Calculate quality based on speed and altitude
+    // Faster movement and higher altitude = lower quality (higher error value)
+    const speedFactor = Math.min(speed / 50, 1); // 0-1 based on speed (50+ m/s = max)
+    const altitudeFactor = Math.min(altitude / 400, 1); // 0-1 based on altitude (400+ m = max)
+    const combinedFactor = Math.max(speedFactor, altitudeFactor * 0.5);
+
+    if (speed > 5 || altitude > 200) {
+        // Aggressive quality reduction: 2 (stopped) to 24 (fast/high)
+        const targetError = 2 + (combinedFactor * 22);
+        window.googleTileset.maximumScreenSpaceError = targetError;
+
         clearTimeout(tileQualityTimeout);
         tileQualityTimeout = setTimeout(() => {
-            // Return to high quality after stopping
+            // Gradually return to high quality after stopping
             if (window.googleTileset) {
                 window.googleTileset.maximumScreenSpaceError = 2;
             }
-        }, 500);
+        }, 800);
     }
+}
+
+// Dynamic fog - thicker fog when moving fast to hide unloaded tiles
+function updateDynamicFog(speed, altitude) {
+    if (!viewer) return;
+
+    const scene = viewer.scene;
+
+    // Base fog density
+    const baseDensity = 0.00008;
+
+    // Increase fog with speed (hides pop-in)
+    const speedFog = (speed / 200) * 0.00015;
+
+    // Increase fog at high altitude
+    const altitudeFog = (Math.max(0, altitude - 100) / 500) * 0.00008;
+
+    // Combined fog density
+    const targetDensity = baseDensity + speedFog + altitudeFog;
+
+    // Smooth transition
+    scene.fog.density = scene.fog.density * 0.9 + targetDensity * 0.1;
+
+    // Also adjust fog screen space error factor for better blending
+    scene.fog.screenSpaceErrorFactor = 2.0 + (speed / 50) * 2.0;
 }
 
 // Preload tiles ahead of drone based on heading
@@ -712,9 +788,9 @@ function updateDrone(deltaTime) {
         droneState.velocityZ ** 2
     );
 
-    // Adaptive tile quality - lower when moving fast, higher when stopped
-    const isMovingFast = droneState.speed > 5;
-    updateTilesetQuality(isMovingFast);
+    // Adaptive tile quality and fog - adjusts based on speed and altitude
+    updateTilesetQuality(droneState.speed, droneState.altitude);
+    updateDynamicFog(droneState.speed, droneState.altitude);
 
     // Preload tiles ahead of drone
     if (droneState.speed > 10) {
@@ -1264,62 +1340,6 @@ function setupControls() {
             e.preventDefault();
         }
     });
-}
-
-// ============================================
-// Street Names Overlay Toggle
-// ============================================
-function setupStreetNamesToggle() {
-    const toggleBtn = document.getElementById('street-names-toggle');
-
-    toggleBtn.addEventListener('click', async () => {
-        streetLabelsEnabled = !streetLabelsEnabled;
-        toggleBtn.classList.toggle('active', streetLabelsEnabled);
-
-        if (streetLabelsEnabled) {
-            // Use Cesium's imagery draping on 3D Tiles (requires Cesium 1.124+)
-            if (window.googleTileset && window.googleTileset.imageryLayers) {
-                if (!streetLabelsLayer) {
-                    // Add road/labels imagery directly onto the 3D tileset
-                    const labelsProvider = new Cesium.UrlTemplateImageryProvider({
-                        url: 'https://basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
-                        credit: 'CartoDB',
-                        minimumLevel: 0,
-                        maximumLevel: 18
-                    });
-                    streetLabelsLayer = window.googleTileset.imageryLayers.addImageryProvider(labelsProvider);
-                    streetLabelsLayer.alpha = 0.95;
-                    console.log('Street labels draped on 3D tiles');
-                } else {
-                    streetLabelsLayer.show = true;
-                }
-            } else {
-                // Fallback for older Cesium or if tileset not available
-                if (!streetLabelsLayer) {
-                    streetLabelsLayer = viewer.imageryLayers.addImageryProvider(
-                        new Cesium.UrlTemplateImageryProvider({
-                            url: 'https://basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
-                            credit: 'CartoDB',
-                            minimumLevel: 0,
-                            maximumLevel: 18
-                        })
-                    );
-                    streetLabelsLayer.alpha = 0.95;
-                    viewer.imageryLayers.raiseToTop(streetLabelsLayer);
-                } else {
-                    streetLabelsLayer.show = true;
-                }
-            }
-        } else {
-            // Hide street labels layer
-            if (streetLabelsLayer) {
-                streetLabelsLayer.show = false;
-            }
-        }
-    });
-
-    // Show the button
-    toggleBtn.classList.remove('hidden');
 }
 
 // ============================================
@@ -3263,21 +3283,28 @@ async function startSimulation() {
         // Initialize Cesium
         await initCesium();
 
+        // Preload 3D map tiles in a large area (this takes a while but makes flying smoother)
+        updateProgress('Preloading 3D map (0%)...', 42);
+        await preloadTilesAroundSpawn((progress, current, total) => {
+            const overallProgress = 42 + Math.round(progress * 0.28); // 42-70%
+            updateProgress(`Preloading 3D map (${progress}%)...`, overallProgress);
+        });
+
+        // Wait for tile requests to settle
+        updateProgress('Finalizing map tiles...', 70);
+        await new Promise(r => setTimeout(r, 1500));
+
         // Load restaurants from Google Places
         await loadRestaurants();
 
         // Create entities
-        updateProgress('Creating drone...', 70);
+        updateProgress('Creating drone...', 78);
         createDrone();
         createRestaurantMarkers();
 
         // Pre-load minimap tiles
-        updateProgress('Loading map tiles...', 75);
+        updateProgress('Loading minimap...', 82);
         await preloadMinimapTiles();
-
-        // Skip preloading Google Places photos - they don't have CORS headers
-        // so preloading with crossOrigin fails. Photos work fine in <img> tags directly.
-        updateProgress('Preparing game...', 80);
 
         // Pre-fetch place details for nearby restaurants
         updateProgress('Loading restaurant details...', 88);
@@ -3290,7 +3317,6 @@ async function startSimulation() {
         setupGameControls();
         setupRestaurantClickHandler();
         setupRestaurantModalListeners();
-        setupStreetNamesToggle();
         setupTurboButton();
 
         updateProgress('Ready!', 100);

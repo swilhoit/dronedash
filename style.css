@@ -446,52 +446,6 @@ canvas {
     background: rgba(50, 50, 50, 1);
 }
 
-/* Street Names Toggle Button */
-.map-toggle-btn {
-    position: fixed;
-    top: 280px;
-    right: 20px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 10px 14px;
-    background: rgba(30, 30, 50, 0.9);
-    border: 2px solid rgba(0, 212, 255, 0.4);
-    border-radius: 8px;
-    color: #fff;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    z-index: 100;
-    transition: all 0.2s ease;
-    backdrop-filter: blur(10px);
-}
-
-.map-toggle-btn:hover {
-    background: rgba(0, 212, 255, 0.2);
-    border-color: rgba(0, 212, 255, 0.7);
-    transform: scale(1.05);
-}
-
-.map-toggle-btn.active {
-    background: rgba(0, 212, 255, 0.3);
-    border-color: #00d4ff;
-    box-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
-}
-
-.map-toggle-btn .toggle-icon {
-    font-size: 16px;
-}
-
-.map-toggle-btn .toggle-label {
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-.map-toggle-btn.hidden {
-    display: none;
-}
-
 /* Loading Modal */
 .loading-content {
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
