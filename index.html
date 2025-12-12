@@ -57,6 +57,78 @@
             <p>Arrow Keys: Forward/Back/Turn | W/S: Altitude | A/D: Strafe | Shift: TURBO</p>
         </div>
         <button id="turbo-btn" class="turbo-btn">TURBO</button>
+        <button id="settings-btn" class="settings-btn" title="Settings">&#9881;</button>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="settings-modal hidden">
+        <div class="settings-content">
+            <div class="settings-header">
+                <h2>Settings</h2>
+                <button id="settings-close" class="settings-close">&times;</button>
+            </div>
+
+            <div class="settings-section">
+                <h3>Graphics</h3>
+
+                <div class="setting-row">
+                    <label>3D Buildings</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="toggle-3d-tiles" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <label>Quality Preset</label>
+                    <select id="quality-preset">
+                        <option value="low">Low (Fast)</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High (Slow)</option>
+                    </select>
+                </div>
+
+                <div class="setting-row">
+                    <label>Dynamic Fog</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="toggle-fog" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <label>Shadows</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="toggle-shadows" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>Cache</h3>
+                <div class="cache-stats">
+                    <span>Cached Tiles: </span>
+                    <span id="cache-count">0</span>
+                </div>
+                <button id="clear-cache-btn" class="settings-btn-action">Clear Tile Cache</button>
+            </div>
+
+            <div class="settings-section">
+                <h3>Performance</h3>
+                <div class="setting-row">
+                    <label>Show FPS</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="toggle-fps">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="settings-footer">
+                <button id="settings-done" class="settings-btn-done">Done</button>
+            </div>
+        </div>
     </div>
 
     <!-- Game Stats Panel -->

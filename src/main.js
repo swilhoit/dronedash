@@ -372,7 +372,7 @@ function updateTilesetQuality(speed, altitude) {
 
 // Dynamic fog - thicker fog when moving fast to hide unloaded tiles
 function updateDynamicFog(speed, altitude) {
-    if (!viewer) return;
+    if (!viewer || !viewer.scene.fog.enabled) return;
 
     const scene = viewer.scene;
 
@@ -1219,6 +1219,214 @@ function setupTurboButton() {
         turboEnabled = !turboEnabled;
         turboBtn.classList.toggle('active', turboEnabled);
     });
+}
+
+// ============================================
+// Settings Menu
+// ============================================
+const gameSettings = {
+    tiles3D: true,
+    quality: 'medium',
+    fog: true,
+    shadows: true,
+    showFps: false
+};
+
+function setupSettings() {
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsModal = document.getElementById('settings-modal');
+    const settingsClose = document.getElementById('settings-close');
+    const settingsDone = document.getElementById('settings-done');
+
+    // Toggles
+    const toggle3DTiles = document.getElementById('toggle-3d-tiles');
+    const toggleFog = document.getElementById('toggle-fog');
+    const toggleShadows = document.getElementById('toggle-shadows');
+    const toggleFps = document.getElementById('toggle-fps');
+    const qualityPreset = document.getElementById('quality-preset');
+    const clearCacheBtn = document.getElementById('clear-cache-btn');
+    const cacheCount = document.getElementById('cache-count');
+
+    if (!settingsBtn || !settingsModal) return;
+
+    // Open settings
+    settingsBtn.addEventListener('click', () => {
+        settingsModal.classList.remove('hidden');
+        updateCacheStats();
+    });
+
+    // Close settings
+    const closeSettings = () => {
+        settingsModal.classList.add('hidden');
+    };
+
+    settingsClose.addEventListener('click', closeSettings);
+    settingsDone.addEventListener('click', closeSettings);
+    settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) closeSettings();
+    });
+
+    // 3D Tiles toggle
+    toggle3DTiles.addEventListener('change', () => {
+        gameSettings.tiles3D = toggle3DTiles.checked;
+        if (window.googleTileset) {
+            window.googleTileset.show = gameSettings.tiles3D;
+        }
+    });
+
+    // Fog toggle
+    toggleFog.addEventListener('change', () => {
+        gameSettings.fog = toggleFog.checked;
+        if (viewer && viewer.scene) {
+            viewer.scene.fog.enabled = gameSettings.fog;
+        }
+    });
+
+    // Shadows toggle
+    toggleShadows.addEventListener('change', () => {
+        gameSettings.shadows = toggleShadows.checked;
+        if (viewer) {
+            viewer.shadows = gameSettings.shadows;
+            if (viewer.scene) {
+                viewer.scene.globe.enableLighting = gameSettings.shadows;
+            }
+        }
+    });
+
+    // Quality preset
+    qualityPreset.addEventListener('change', () => {
+        gameSettings.quality = qualityPreset.value;
+        applyQualityPreset(gameSettings.quality);
+    });
+
+    // FPS toggle
+    toggleFps.addEventListener('change', () => {
+        gameSettings.showFps = toggleFps.checked;
+        toggleFpsCounter(gameSettings.showFps);
+    });
+
+    // Clear cache
+    clearCacheBtn.addEventListener('click', async () => {
+        clearCacheBtn.textContent = 'Clearing...';
+        clearCacheBtn.disabled = true;
+
+        try {
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                const messageChannel = new MessageChannel();
+                messageChannel.port1.onmessage = (event) => {
+                    if (event.data.cleared) {
+                        cacheCount.textContent = '0';
+                        clearCacheBtn.textContent = 'Cache Cleared!';
+                        setTimeout(() => {
+                            clearCacheBtn.textContent = 'Clear Tile Cache';
+                            clearCacheBtn.disabled = false;
+                        }, 2000);
+                    }
+                };
+                navigator.serviceWorker.controller.postMessage(
+                    { type: 'CLEAR_TILE_CACHE' },
+                    [messageChannel.port2]
+                );
+            } else {
+                // Fallback - clear caches directly
+                if ('caches' in window) {
+                    await caches.delete('google-3d-tiles-v1');
+                    cacheCount.textContent = '0';
+                    clearCacheBtn.textContent = 'Cache Cleared!';
+                    setTimeout(() => {
+                        clearCacheBtn.textContent = 'Clear Tile Cache';
+                        clearCacheBtn.disabled = false;
+                    }, 2000);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to clear cache:', error);
+            clearCacheBtn.textContent = 'Error';
+            setTimeout(() => {
+                clearCacheBtn.textContent = 'Clear Tile Cache';
+                clearCacheBtn.disabled = false;
+            }, 2000);
+        }
+    });
+}
+
+function updateCacheStats() {
+    const cacheCount = document.getElementById('cache-count');
+    if (!cacheCount) return;
+
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        const messageChannel = new MessageChannel();
+        messageChannel.port1.onmessage = (event) => {
+            cacheCount.textContent = event.data.entries || 0;
+        };
+        navigator.serviceWorker.controller.postMessage(
+            { type: 'GET_CACHE_STATS' },
+            [messageChannel.port2]
+        );
+    } else if ('caches' in window) {
+        caches.open('google-3d-tiles-v1').then(cache => {
+            cache.keys().then(keys => {
+                cacheCount.textContent = keys.length;
+            });
+        }).catch(() => {
+            cacheCount.textContent = '0';
+        });
+    }
+}
+
+function applyQualityPreset(preset) {
+    if (!window.googleTileset || !viewer) return;
+
+    switch (preset) {
+        case 'low':
+            window.googleTileset.maximumScreenSpaceError = 16;
+            window.googleTileset.maximumMemoryUsage = 512;
+            viewer.scene.fog.density = 0.0002;
+            viewer.resolutionScale = 0.75;
+            break;
+        case 'medium':
+            window.googleTileset.maximumScreenSpaceError = 8;
+            window.googleTileset.maximumMemoryUsage = 2048;
+            viewer.scene.fog.density = 0.0001;
+            viewer.resolutionScale = 1.0;
+            break;
+        case 'high':
+            window.googleTileset.maximumScreenSpaceError = 2;
+            window.googleTileset.maximumMemoryUsage = 4096;
+            viewer.scene.fog.density = 0.00005;
+            viewer.resolutionScale = 1.0;
+            break;
+    }
+}
+
+// FPS Counter
+let fpsElement = null;
+let frameCount = 0;
+let lastFpsUpdate = 0;
+
+function toggleFpsCounter(show) {
+    if (show) {
+        if (!fpsElement) {
+            fpsElement = document.createElement('div');
+            fpsElement.className = 'fps-counter';
+            fpsElement.textContent = 'FPS: --';
+            document.body.appendChild(fpsElement);
+        }
+        fpsElement.classList.remove('hidden');
+    } else if (fpsElement) {
+        fpsElement.classList.add('hidden');
+    }
+}
+
+function updateFps(timestamp) {
+    if (!gameSettings.showFps || !fpsElement) return;
+
+    frameCount++;
+    if (timestamp - lastFpsUpdate >= 1000) {
+        fpsElement.textContent = `FPS: ${frameCount}`;
+        frameCount = 0;
+        lastFpsUpdate = timestamp;
+    }
 }
 
 // ============================================
@@ -3069,7 +3277,7 @@ function setupGameControls() {
 // ============================================
 let lastTime = performance.now();
 
-function animate() {
+function animate(timestamp) {
     requestAnimationFrame(animate);
 
     const currentTime = performance.now();
@@ -3081,6 +3289,7 @@ function animate() {
     updateCamera();
     updateHUD();
     updateMinimap();
+    updateFps(timestamp);
 
     if (gameState.isPlaying) {
         checkDeliveryProgress();
@@ -3206,6 +3415,7 @@ async function startSimulation() {
         setupRestaurantClickHandler();
         setupRestaurantModalListeners();
         setupTurboButton();
+        setupSettings();
 
         updateProgress('Ready!', 100);
         await new Promise(r => setTimeout(r, 300));
