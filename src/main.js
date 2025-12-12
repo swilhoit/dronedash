@@ -865,14 +865,14 @@ function updateDrone(deltaTime) {
     const baseVerticalSpeed = 60;   // m/s
     const baseMaxSpeed = 150;       // m/s
 
-    // Turbo multiplier (4x speed for intense boost!)
-    const turboMultiplier = isTurbo ? 4.0 : 1.0;
+    // Turbo multiplier (8x speed for LIGHTNING FAST boost!)
+    const turboMultiplier = isTurbo ? 8.0 : 1.0;
 
     const acceleration = baseAcceleration * turboMultiplier;
-    const turnSpeed = baseTurnSpeed * (isTurbo ? 1.5 : 1.0);  // Slightly faster turning in turbo
+    const turnSpeed = baseTurnSpeed * (isTurbo ? 2.0 : 1.0);  // Faster turning in turbo
     const verticalSpeed = baseVerticalSpeed * turboMultiplier;
     const maxSpeed = baseMaxSpeed * turboMultiplier;
-    const drag = isTurbo ? 0.985 : 0.93;  // Higher drag in turbo = less friction = faster speeds
+    const drag = isTurbo ? 0.995 : 0.93;  // Minimal friction in turbo = lightning speed
 
     // Update turbo indicator
     updateTurboIndicator(isTurbo);
@@ -3086,7 +3086,7 @@ function getMenuCategory(restaurant) {
 }
 
 function generateDeliveryLocation(restaurant) {
-    const distance = 400 + Math.random() * 1200; // 400-1600m (longer deliveries)
+    const distance = 800 + Math.random() * 2500; // 800-3300m (challenging long-distance deliveries)
     const angle = Math.random() * Math.PI * 2;
 
     const metersPerDegLat = 111320;
