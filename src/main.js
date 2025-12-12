@@ -2548,14 +2548,12 @@ function createRestaurantMarkers() {
 }
 
 function createRestaurantMarkerWithPhoto(restaurant) {
-    // Use Google Places photo directly if available (Cesium handles the URL)
-    if (restaurant.photoUrl) {
-        // Create simple billboard with Google photo - no canvas needed
-        addRestaurantEntityWithUrl(restaurant, restaurant.photoUrl);
-    } else {
-        // No Google photo - create canvas marker with fallback image
-        loadFallbackImage(restaurant);
-    }
+    // Google blocks proxy requests - use cuisine-based Unsplash images (they work!)
+    const fallbackUrl = getCuisineFallbackImage(restaurant);
+    const proxiedUrl = `${CORS_PROXY_URL}?url=${encodeURIComponent(fallbackUrl)}`;
+
+    // Create billboard with proxied Unsplash image
+    addRestaurantEntityWithUrl(restaurant, proxiedUrl);
 }
 
 function loadFallbackImage(restaurant) {
